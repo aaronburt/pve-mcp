@@ -1,0 +1,6 @@
+*.exe
+*.test
+pve-mcp*
+bin/
+dist/
+.env
