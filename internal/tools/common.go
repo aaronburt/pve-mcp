@@ -46,8 +46,22 @@ func ValidateVMID(vmid int) (int, error) {
 	return vmid, nil
 }
 
-func ParseRequiredString(args map[string]any, key string) (string, error) {
-	raw, ok := args[key]
+func extractArgs(args any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	if m, ok := args.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
+
+func ParseRequiredString(args any, key string) (string, error) {
+	m := extractArgs(args)
+	if m == nil {
+		return "", fmt.Errorf("missing required parameter: %s", key)
+	}
+	raw, ok := m[key]
 	if !ok || raw == nil {
 		return "", fmt.Errorf("missing required parameter: %s", key)
 	}
@@ -62,8 +76,12 @@ func ParseRequiredString(args map[string]any, key string) (string, error) {
 	return trimmed, nil
 }
 
-func ParseOptionalString(args map[string]any, key string, fallback string) string {
-	raw, ok := args[key]
+func ParseOptionalString(args any, key string, fallback string) string {
+	m := extractArgs(args)
+	if m == nil {
+		return fallback
+	}
+	raw, ok := m[key]
 	if !ok || raw == nil {
 		return fallback
 	}
@@ -78,8 +96,12 @@ func ParseOptionalString(args map[string]any, key string, fallback string) strin
 	return trimmed
 }
 
-func ParseRequiredInt(args map[string]any, key string) (int, error) {
-	raw, ok := args[key]
+func ParseRequiredInt(args any, key string) (int, error) {
+	m := extractArgs(args)
+	if m == nil {
+		return 0, fmt.Errorf("missing required parameter: %s", key)
+	}
+	raw, ok := m[key]
 	if !ok || raw == nil {
 		return 0, fmt.Errorf("missing required parameter: %s", key)
 	}
@@ -112,8 +134,12 @@ func ParseRequiredInt(args map[string]any, key string) (int, error) {
 	}
 }
 
-func ParseOptionalInt(args map[string]any, key string, fallback int) (int, error) {
-	raw, ok := args[key]
+func ParseOptionalInt(args any, key string, fallback int) (int, error) {
+	m := extractArgs(args)
+	if m == nil {
+		return fallback, nil
+	}
+	raw, ok := m[key]
 	if !ok || raw == nil {
 		return fallback, nil
 	}
