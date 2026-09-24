@@ -173,6 +173,12 @@ go build -trimpath -ldflags="-s -w" -o pve-mcp.exe ./cmd/pve-mcp
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o pve-mcp-linux ./cmd/pve-mcp
 ```
 
+## AI & Safety Disclaimer
+
+- **LLM Interpretation**: Large Language Models (LLMs) are probabilistic systems capable of misinterpreting metrics, drawing incorrect conclusions, or proposing flawed remediation steps. While `pve-mcp` is strictly read-only to prevent state-changing actions, operators should always verify cluster conditions directly via the Proxmox VE Web UI or CLI before executing administrative commands.
+- **No Operational Warranty**: This software is provided for telemetry and inspection purposes. The authors accept no responsibility or liability for actions taken by autonomous agents or humans based on LLM interpretations of Proxmox cluster data.
+- **AI-Assisted Development**: This codebase was developed with AI assistance and validated through automated testing, security audits, and continuous verification.
+
 ## License
 
 MIT
