@@ -2,8 +2,9 @@ package pve_test
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func getLiveClient(t *testing.T) *pve.Client {
 		TokenID:     tokenID,
 		TokenSecret: tokenSecret,
 		VerifySSL:   false,
-		Timeout:     10 * time.Second,
+		Timeout:     15 * time.Second,
 	}
 
 	client, err := pve.NewClient(cfg)
@@ -77,20 +78,66 @@ func TestLive_PVE_Nodes(t *testing.T) {
 	}
 }
 
-func TestLive_PVE_AuditPermissions(t *testing.T) {
+func TestLive_PVE_ClusterStatus(t *testing.T) {
 	client := getLiveClient(t)
 
 	var clusterStatus []pve.ClusterStatusItem
 	err := client.Get(context.Background(), "/cluster/status", nil, &clusterStatus)
 	if err != nil {
-		if strings.Contains(err.Error(), "Sys.Audit") || strings.Contains(err.Error(), "Permission check failed") {
-			t.Logf("Sys.Audit permission not yet assigned to token: %v", err)
-			return
-		}
 		t.Fatalf("unexpected error fetching cluster status: %v", err)
 	}
 
 	if len(clusterStatus) == 0 {
 		t.Fatal("expected cluster status entries")
+	}
+}
+
+func TestLive_PVE_ClusterResources(t *testing.T) {
+	client := getLiveClient(t)
+
+	var resources []pve.ClusterResource
+	err := client.Get(context.Background(), "/cluster/resources", nil, &resources)
+	if err != nil {
+		t.Fatalf("unexpected error fetching cluster resources: %v", err)
+	}
+
+	if len(resources) == 0 {
+		t.Fatal("expected resources in live cluster")
+	}
+}
+
+func TestLive_PVE_Workloads(t *testing.T) {
+	client := getLiveClient(t)
+
+	var nodes []pve.NodeItem
+	err := client.Get(context.Background(), "/nodes", nil, &nodes)
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("failed to get active node for workloads test: %v", err)
+	}
+	targetNode := nodes[0].Node
+
+	var qemuVMs []map[string]any
+	qemuPath := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(targetNode))
+	err = client.Get(context.Background(), qemuPath, nil, &qemuVMs)
+	if err != nil {
+		t.Fatalf("failed to list QEMU VMs on node %s: %v", targetNode, err)
+	}
+
+	var lxcContainers []map[string]any
+	lxcPath := fmt.Sprintf("/nodes/%s/lxc", url.PathEscape(targetNode))
+	err = client.Get(context.Background(), lxcPath, nil, &lxcContainers)
+	if err != nil {
+		t.Fatalf("failed to list LXC containers on node %s: %v", targetNode, err)
+	}
+
+	var storages []pve.StorageItem
+	storagePath := fmt.Sprintf("/nodes/%s/storage", url.PathEscape(targetNode))
+	err = client.Get(context.Background(), storagePath, nil, &storages)
+	if err != nil {
+		t.Fatalf("failed to list storages on node %s: %v", targetNode, err)
+	}
+
+	if len(storages) == 0 {
+		t.Fatalf("expected storages on node %s", targetNode)
 	}
 }
