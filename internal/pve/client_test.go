@@ -165,3 +165,47 @@ func TestClient_TLS_Fingerprint(t *testing.T) {
 		t.Fatal("expected error with mismatched fingerprint, got nil")
 	}
 }
+
+func TestClient_Get_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"message":"permission denied for secret-uuid"}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Host:        server.URL,
+		TokenID:     "user@pve!token",
+		TokenSecret: "secret-uuid",
+		VerifySSL:   false,
+	}
+
+	client, err := pve.NewClient(cfg)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	var res json.RawMessage
+	err = client.Get(context.Background(), "/forbidden", nil, &res)
+	if err == nil {
+		t.Fatal("expected http error, got nil")
+	}
+	if strings.Contains(err.Error(), "secret-uuid") {
+		t.Fatalf("expected error to sanitize secret, got: %s", err.Error())
+	}
+}
+
+func TestClient_TLS_CACertError(t *testing.T) {
+	cfg := &config.Config{
+		Host:        "https://127.0.0.1:8006",
+		TokenID:     "user@pve!token",
+		TokenSecret: "secret",
+		CACertPath:  "/nonexistent/path/to/ca.pem",
+	}
+
+	_, err := pve.NewClient(cfg)
+	if err == nil {
+		t.Fatal("expected error for non-existent CA cert")
+	}
+}

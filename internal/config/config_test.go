@@ -103,3 +103,15 @@ func TestLoadFromEnv_CustomOverrides(t *testing.T) {
 		t.Errorf("got %d allowed origins, want 2", len(cfg.AllowedOrigins))
 	}
 }
+
+func TestLoadFromEnv_InvalidTimeout(t *testing.T) {
+	t.Setenv("PVE_HOST", "https://pve.example.com")
+	t.Setenv("PVE_TOKEN_ID", "root@pam!token")
+	t.Setenv("PVE_TOKEN_SECRET", "secret")
+	t.Setenv("PVE_TIMEOUT_SECONDS", "not-a-number")
+
+	_, err := config.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for non-numeric timeout")
+	}
+}
