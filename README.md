@@ -1,6 +1,6 @@
 # pve-mcp
 
-[![Go Version](https://img.shields.io/badge/go-1.22%2B-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/go-1.26%2B-blue.svg)](https://golang.org)
 [![Scope](https://img.shields.io/badge/scope-strictly_read--only-green.svg)](#security--architecture)
 [![Token Efficiency](https://img.shields.io/badge/token_savings-82%25-brightgreen.svg)](#token-efficiency-compact-tsv-vs-full-json)
 [![Coverage](https://img.shields.io/badge/coverage-87.4%25-success.svg)](#test-coverage--verification)
