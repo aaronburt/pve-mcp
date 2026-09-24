@@ -18,6 +18,7 @@ func RegisterStorageTools(s *server.MCPServer, client *pve.Client) {
 			mcp.WithDescription("List storage pools accessible from a node"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
+			mcp.WithString("mode", mcp.Description("Output mode ('compressed' for token-efficient summary, 'full' for raw API output)"), mcp.Enum("compressed", "full")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -29,11 +30,33 @@ func RegisterStorageTools(s *server.MCPServer, client *pve.Client) {
 				return ErrorResult(err.Error())
 			}
 			path := fmt.Sprintf("/nodes/%s/storage", url.PathEscape(node))
-			var data json.RawMessage
-			if err := client.Get(ctx, path, nil, &data); err != nil {
+
+			if !IsCompressedMode(req.Params.Arguments) {
+				var data json.RawMessage
+				if err := client.Get(ctx, path, nil, &data); err != nil {
+					return ErrorResult(err.Error())
+				}
+				return JSONResult(data)
+			}
+
+			var storages []pve.StorageItem
+			if err := client.Get(ctx, path, nil, &storages); err != nil {
 				return ErrorResult(err.Error())
 			}
-			return JSONResult(data)
+
+			compressed := make([]CompressedStorage, 0, len(storages))
+			for _, st := range storages {
+				compressed = append(compressed, CompressedStorage{
+					Storage: st.Storage,
+					Type:    st.Type,
+					TotalGB: st.Total / (1024 * 1024 * 1024),
+					UsedGB:  st.Used / (1024 * 1024 * 1024),
+					AvailGB: st.Avail / (1024 * 1024 * 1024),
+					Shared:  st.Shared,
+					Content: st.Content,
+				})
+			}
+			return JSONResult(compressed)
 		},
 	)
 

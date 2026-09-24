@@ -33,17 +33,42 @@ func RegisterClusterTools(s *server.MCPServer, client *pve.Client) {
 			mcp.WithDescription("Get cluster-wide resources including nodes, VMs, storage, and pools"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("type", mcp.Description("Resource type filter (vm, storage, node, sdn)"), mcp.Enum("vm", "storage", "node", "sdn")),
+			mcp.WithString("mode", mcp.Description("Output mode ('compressed' for token-efficient summary, 'full' for raw API output)"), mcp.Enum("compressed", "full")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			query := url.Values{}
 			if resType := ParseOptionalString(req.Params.Arguments, "type", ""); resType != "" {
 				query.Set("type", resType)
 			}
-			var data json.RawMessage
-			if err := client.Get(ctx, "/cluster/resources", query, &data); err != nil {
+
+			if !IsCompressedMode(req.Params.Arguments) {
+				var rawData json.RawMessage
+				if err := client.Get(ctx, "/cluster/resources", query, &rawData); err != nil {
+					return ErrorResult(err.Error())
+				}
+				return JSONResult(rawData)
+			}
+
+			var resources []pve.ClusterResource
+			if err := client.Get(ctx, "/cluster/resources", query, &resources); err != nil {
 				return ErrorResult(err.Error())
 			}
-			return JSONResult(data)
+
+			compressed := make([]CompressedResource, 0, len(resources))
+			for _, r := range resources {
+				compressed = append(compressed, CompressedResource{
+					ID:     r.ID,
+					Type:   r.Type,
+					Name:   r.Name,
+					Status: r.Status,
+					Node:   r.Node,
+					VMID:   r.VMID,
+					CPU:    r.CPU,
+					MemMB:  r.MaxMem / (1024 * 1024),
+					DiskGB: r.MaxDisk / (1024 * 1024 * 1024),
+				})
+			}
+			return JSONResult(compressed)
 		},
 	)
 

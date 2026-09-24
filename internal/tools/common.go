@@ -23,6 +23,46 @@ type TruncatedResponse[T any] struct {
 	Items     []T  `json:"items"`
 }
 
+type CompressedVM struct {
+	VMID     int     `json:"vmid"`
+	Name     string  `json:"name"`
+	Status   string  `json:"status"`
+	CPUs     int     `json:"cpus,omitempty"`
+	CPU      float64 `json:"cpu,omitempty"`
+	MemMB    int64   `json:"mem_mb,omitempty"`
+	MaxMemMB int64   `json:"max_mem_mb,omitempty"`
+	DiskGB   int64   `json:"disk_gb,omitempty"`
+	Uptime   int64   `json:"uptime,omitempty"`
+}
+
+type CompressedStorage struct {
+	Storage  string `json:"storage"`
+	Type     string `json:"type"`
+	Status   string `json:"status,omitempty"`
+	TotalGB  int64  `json:"total_gb,omitempty"`
+	UsedGB   int64  `json:"used_gb,omitempty"`
+	AvailGB  int64  `json:"avail_gb,omitempty"`
+	Shared   int    `json:"shared"`
+	Content  string `json:"content,omitempty"`
+}
+
+type CompressedResource struct {
+	ID     string  `json:"id"`
+	Type   string  `json:"type"`
+	Name   string  `json:"name,omitempty"`
+	Status string  `json:"status,omitempty"`
+	Node   string  `json:"node,omitempty"`
+	VMID   int     `json:"vmid,omitempty"`
+	CPU    float64 `json:"cpu,omitempty"`
+	MemMB  int64   `json:"mem_mb,omitempty"`
+	DiskGB int64   `json:"disk_gb,omitempty"`
+}
+
+func IsCompressedMode(args any) bool {
+	mode := ParseOptionalString(args, "mode", "compressed")
+	return mode != "full" && mode != "raw" && mode != "detailed"
+}
+
 func ValidateNode(node string) (string, error) {
 	trimmed := strings.TrimSpace(node)
 	if trimmed == "" || !nodeRegex.MatchString(trimmed) {
@@ -167,7 +207,7 @@ func JSONResult(data any) (*mcp.CallToolResult, error) {
 	case json.RawMessage:
 		return mcp.NewToolResultText(string(v)), nil
 	default:
-		b, err := json.MarshalIndent(data, "", "  ")
+		b, err := json.Marshal(data)
 		if err != nil {
 			return nil, errors.New("failed to marshal json result")
 		}

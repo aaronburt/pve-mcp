@@ -142,4 +142,19 @@ func TestTools_RegisterAndExecuteAll(t *testing.T) {
 			t.Fatalf("expected error result from %s when PVE fails, got %+v", tc.name, res)
 		}
 	}
+
+	modeTools := []string{"pve_cluster_resources", "pve_qemu_list", "pve_lxc_list", "pve_storage_list"}
+	for _, toolName := range modeTools {
+		st := mcpServer.GetTool(toolName)
+		args := map[string]any{"node": "pve", "mode": "full"}
+		res, err := st.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name:      toolName,
+				Arguments: args,
+			},
+		})
+		if err != nil || res == nil || res.IsError {
+			t.Fatalf("tool %s failed in full mode: err=%v, res=%+v", toolName, err, res)
+		}
+	}
 }
