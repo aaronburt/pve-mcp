@@ -1,247 +1,95 @@
 # pve-mcp
 
 [![Go Version](https://img.shields.io/badge/go-1.22%2B-blue.svg)](https://golang.org)
-[![Scope](https://img.shields.io/badge/scope-strictly_read--only-green.svg)](#architecture--security-model)
-[![Token Efficiency](https://img.shields.io/badge/token_savings-82%25-brightgreen.svg)](#benchmark--token-efficiency)
+[![Scope](https://img.shields.io/badge/scope-strictly_read--only-green.svg)](#security--architecture)
+[![Token Efficiency](https://img.shields.io/badge/token_savings-82%25-brightgreen.svg)](#token-efficiency-compact-tsv-vs-full-json)
 [![Coverage](https://img.shields.io/badge/coverage-87.4%25-success.svg)](#test-coverage--verification)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A standalone, security-hardened Model Context Protocol (MCP) server for Proxmox Virtual Environment (PVE). Designed in compiled Go for **extreme token efficiency**, **sub-15ms startup**, and **zero-mutation read-only safety** over Streamable HTTP/SSE.
+A lightweight, security-hardened Model Context Protocol (MCP) server for Proxmox Virtual Environment (PVE). Built in compiled Go for **82% token reduction**, **sub-15ms cold starts**, and **zero-mutation read-only safety** over Streamable HTTP/SSE.
 
 ---
 
 ## Benchmark: Go `pve-mcp` vs. TypeScript `PVEMCP`
 
-`pve-mcp` was engineered to solve the primary drawbacks of Node.js-based MCP servers: heavy memory footprints, sluggish cold-start times, and bloated context-window consumption.
-
-### Performance & Runtime Metrics
-
-| Dimension | TypeScript / Node.js (`PVEMCP`) | Go (`pve-mcp`) | Benefit |
+| Dimension | TypeScript / Node (`PVEMCP`) | Go (`pve-mcp`) | Advantage |
 | :--- | :---: | :---: | :--- |
-| **Token Consumption** | ~2,880 tokens / full scan | **~518 tokens / full scan** | **82% fewer tokens consumed per loop** |
-| **Cold-Start Time** | 250ms – 600ms (V8 JIT boot) | **5ms – 15ms** (Native binary) | **30x faster cold starts** |
+| **Token Consumption** | ~2,880 tokens / scan | **~518 tokens / scan** | **82% fewer tokens per query loop** |
+| **Cold-Start Time** | 250ms – 600ms (Node V8) | **5ms – 15ms** (Native binary) | **30x faster cold starts** |
 | **Memory Footprint (RSS)** | ~60MB – 90MB | **~8MB – 14MB** | **~85% less memory usage** |
-| **Connection Transport** | Standard Node fetch | Pooled Keep-Alive HTTP/TLS | Zero connection churn on repeat calls |
-| **Concurrency** | Single-threaded event loop | Goroutines (M:N native threads) | Parallel dispatch with no GC stalls |
+| **Connection Transport** | Standard Node fetch | Pooled Keep-Alive HTTP/TLS | Zero socket churn on repeat queries |
+| **Concurrency** | Single-threaded event loop | Goroutines (M:N native threads) | Parallel dispatch with no GC pauses |
 
 ---
 
-## Token Efficiency: `compact` vs. `full`
+## Token Efficiency: `compact` (TSV) vs. `full` (JSON)
 
-Standard Proxmox API endpoints return hundreds of low-level kernel telemetry counters (`pressurecpufull`, `balloon_min`, `shares`, `memhost`, raw byte counts) on every query. `pve-mcp` defaults to **`compact` tabular mode**, providing high-signal metrics formatted for instant LLM comprehension at a fraction of the token cost.
+Standard Proxmox API endpoints dump dozens of low-level kernel telemetry counters (`pressurecpufull`, `shares`, `balloon_min`, raw byte counters) on every call. 
 
-### Output Layout Comparison (Anonymized Data)
+`pve-mcp` addresses this at the protocol level:
+- **Wire Envelope**: All responses adhere to the standard MCP JSON-RPC protocol (`{"content": [{"type": "text", "text": "..."}]}`).
+- **Payload (`compact` — Default)**: The `text` field contains a clean, header-delimited **Tabular TSV** table. LLMs parse tables natively with high attention fidelity while slashing context cost by **82%**.
+- **Payload (`full`)**: The `text` field contains the unpruned, raw Proxmox JSON dump for deep debugging.
+
+### Anonymized Output Comparison
 
 ```text
 ================================================================================
-MODE: "compact" (Default — Tabular TSV Format)
-Tokens: ~50 | Focus: High Signal, Maximum Token Efficiency
+MODE: "compact" (Default — Tabular TSV inside MCP text content) [~50 tokens]
 ================================================================================
-
 VMID	NAME	STATUS	CPUS	CPU	RAM_MB	MAX_RAM_MB	DISK_GB	UPTIME_SEC
 100	web-app	running	2	0.02	1024	2048		20	360000
 101	db-node	running	4	0.15	4096	8192		50	360000
 102	cache-1	stopped	1	0.00	0	1024		10	0
 
 ================================================================================
-MODE: "full" (Raw JSON Format)
-Tokens: ~430 | Focus: Low-Level OS Telemetry & Deep Diagnostics
+MODE: "full" (Raw JSON inside MCP text content) [~430 tokens]
 ================================================================================
-
 [
-  {
-    "vmid": 100,
-    "name": "web-app",
-    "status": "running",
-    "cpus": 2,
-    "cpu": 0.02,
-    "mem": 1073741824,
-    "maxmem": 2147483648,
-    "memhost": 1073741824,
-    "disk": 5368709120,
-    "maxdisk": 21474836480,
-    "uptime": 360000,
-    "pid": 1234,
-    "balloon_min": 536870912,
-    "shares": 1000,
-    "netin": 1258291200,
-    "netout": 943718400,
-    "pressurecpufull": 0,
-    "pressurecpusome": 0,
-    "pressureiofull": 0,
-    "pressureiosome": 0,
-    "pressurememoryfull": 0,
-    "pressurememorysome": 0
-  },
-  {
-    "vmid": 101,
-    "name": "db-node",
-    "status": "running",
-    "cpus": 4,
-    "cpu": 0.15,
-    "mem": 4294967296,
-    "maxmem": 8589934592,
-    "memhost": 4294967296,
-    "disk": 21474836480,
-    "maxdisk": 53687091200,
-    "uptime": 360000,
-    "pid": 5678,
-    "balloon_min": 1073741824,
-    "shares": 1000,
-    "netin": 4194304000,
-    "netout": 3145728000,
-    "pressurecpufull": 0,
-    "pressurecpusome": 0,
-    "pressureiofull": 0,
-    "pressureiosome": 0,
-    "pressurememoryfull": 0,
-    "pressurememorysome": 0
-  }
+  {"vmid":100,"name":"web-app","status":"running","cpus":2,"cpu":0.02,"mem":1073741824,"maxmem":2147483648,"disk":5368709120,"maxdisk":21474836480,"uptime":360000,"pressurecpufull":0,"shares":1000,...},
+  {"vmid":101,"name":"db-node","status":"running","cpus":4,"cpu":0.15,"mem":4294967296,"maxmem":8589934592,"disk":21474836480,"maxdisk":53687091200,"uptime":360000,"pressurecpufull":0,"shares":1000,...}
 ]
 ```
 
-### Measured Savings Across Tools
+### Measured Token Savings
 
-| Tool | `compact` (Tabular) | `full` (Raw API) | Token Savings |
+| Tool | `compact` (TSV) | `full` (JSON) | Token Reduction |
 | :--- | :---: | :---: | :---: |
-| **`pve_qemu_list`** (4 VMs) | **~71 tokens** | ~430 tokens | **83.5%** |
-| **`pve_lxc_list`** (7 Containers) | **~107 tokens** | ~890 tokens | **88.0%** |
-| **`pve_storage_list`** (5 Storage Pools) | **~71 tokens** | ~240 tokens | **70.4%** |
-| **`pve_cluster_resources`** (18 Items) | **~269 tokens** | ~1,320 tokens | **79.6%** |
-| **Total (All 4 Core Inspection Tools)** | **~518 tokens** | **~2,880 tokens** | **82.0%** |
+| `pve_qemu_list` (4 VMs) | **~71 tokens** | ~430 tokens | **83.5%** |
+| `pve_lxc_list` (7 Containers) | **~107 tokens** | ~890 tokens | **88.0%** |
+| `pve_storage_list` (5 Storage Pools) | **~71 tokens** | ~240 tokens | **70.4%** |
+| `pve_cluster_resources` (18 Items) | **~269 tokens** | ~1,320 tokens | **79.6%** |
+| **Total (Core Inspection Tools)** | **~518 tokens** | **~2,880 tokens** | **82.0%** |
 
-*(To request unpruned raw API telemetry, any tool can be invoked with `mode: "full"`).*
-
----
-
-## Architecture & Security Model
-
-- **Strictly Read-Only Scope**: Exactly 29 monitoring, status, and inspection tools. Zero state-changing mutation endpoints.
-- **Localhost Default Binding**: Binds to `127.0.0.1` by default to prevent accidental LAN exposure.
-- **Bearer Authentication**: Constant-time token verification (`crypto/subtle.ConstantTimeCompare`) via `MCP_AUTH_TOKEN`.
-- **DNS Rebinding Protection**: Automatic loopback verification and optional origin whitelist via `MCP_ALLOWED_ORIGINS`.
-- **Path Traversal Prevention**: Strict regex validation on node names (`^[a-zA-Z0-9_\-]+$`) and storage identifiers (`^[a-zA-Z0-9_\.\-]+$`), integer range validation on VMIDs (100–999,999,999), and path segment escaping (`url.PathEscape`).
-- **Secret Sanitization**: PVE token secrets and authorization headers are scrubbed from all logs and error messages without corrupting multi-byte UTF-8 runes.
-- **TLS Hardening**: TLS 1.2+ minimum, custom CA bundle support (`PVE_CA_CERT`), and SHA-256 fingerprint pinning (`PVE_FINGERPRINT`).
-- **DoS Protection**: `ReadHeaderTimeout: 5s` and an explicit 10MB payload size ceiling.
+*(To request unpruned raw API telemetry, pass `mode: "full"` to any list tool).*
 
 ---
 
-## Configuration
+## Quickstart
 
-Configure the server using environment variables:
-
-| Variable | Required | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `PVE_HOST` | **Yes** | — | Proxmox VE host URL (e.g., `https://pve.example.com:8006`). |
-| `PVE_TOKEN_ID` | **Yes** | — | API Token ID (e.g., `auditor@pve!mcp`). |
-| `PVE_TOKEN_SECRET` | **Yes** | — | API Token Secret UUID. |
-| `PVE_VERIFY_SSL` | No | `true` | Set to `false` to disable certificate verification for self-signed certs. |
-| `PVE_CA_CERT` | No | — | Path to a custom CA certificate PEM file. |
-| `PVE_FINGERPRINT` | No | — | SHA-256 fingerprint of the PVE SSL certificate. |
-| `MCP_BIND_ADDRESS` | No | `127.0.0.1` | Network interface IP to bind. |
-| `PORT` | No | `8080` | Port for the HTTP/SSE listener. |
-| `MCP_AUTH_TOKEN` | No | — | Optional bearer secret required to connect to the MCP server. |
-| `MCP_ALLOWED_ORIGINS` | No | — | Comma-separated list of allowed HTTP `Origin` headers. |
-| `PVE_TIMEOUT_SECONDS` | No | `30` | HTTP request timeout in seconds. |
-| `LOG_LEVEL` | No | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`). |
-
----
-
-## Proxmox VE Permissions
-
-For least-privilege operation, configure a dedicated API token with read-only access:
-
-1. In PVE Web UI, navigate to **Datacenter** → **Permissions** → **API Tokens** and add a token: `auditor@pve!mcp` (with **Privilege Separation** enabled).
-2. Under **Datacenter** → **Permissions**, click **Add** → **API Token Permission**:
-   - **Path**: `/`
-   - **API Token**: `auditor@pve!mcp`
-   - **Role**: `PVEAuditor`
-3. *(Optional)* To enable node syslog inspection via `pve_node_syslog`, assign a custom role containing the `Sys.Syslog` privilege to `/`.
-
----
-
-## Tool Reference (29 Tools)
-
-### Cluster Tools (5)
-- `pve_cluster_status`: Get cluster status and quorum information.
-- `pve_cluster_resources`: Get cluster-wide resources (nodes, VMs, storage, pools) with optional `type` and `mode` filters (defaults to `mode: "compact"`; use `mode: "full"` for raw Proxmox JSON).
-- `pve_cluster_nextid`: Get next available free VMID in the cluster.
-- `pve_cluster_log`: Read cluster-wide log entries with optional `max` limit.
-- `pve_cluster_ha_status`: Get High Availability (HA) cluster status.
-
-### Node Tools (5)
-- `pve_nodes_list`: List all cluster nodes with summary health and metrics.
-- `pve_node_status`: Get detailed CPU, memory, and uptime status for a node (`node`).
-- `pve_node_version`: Get package and kernel version details for a node (`node`).
-- `pve_node_syslog`: Read system journal logs on a node (`node`, optional `limit`, `since`, `until`).
-- `pve_node_rrddata`: Read RRD performance data for a node (`node`, `timeframe`, optional `cf`).
-
-### QEMU Workload Tools (5)
-- `pve_qemu_list`: List all virtual machines on a node (`node`, optional `mode`).
-- `pve_qemu_status`: Get current status of a virtual machine (`node`, `vmid`).
-- `pve_qemu_config`: Get configuration details of a virtual machine (`node`, `vmid`).
-- `pve_qemu_snapshots`: List snapshots for a virtual machine (`node`, `vmid`).
-- `pve_qemu_firewall`: Get firewall rules for a virtual machine (`node`, `vmid`).
-
-### LXC Container Tools (5)
-- `pve_lxc_list`: List all LXC containers on a node (`node`, optional `mode`).
-- `pve_lxc_status`: Get current status of an LXC container (`node`, `vmid`).
-- `pve_lxc_config`: Get configuration details of an LXC container (`node`, `vmid`).
-- `pve_lxc_snapshots`: List snapshots for an LXC container (`node`, `vmid`).
-- `pve_lxc_firewall`: Get firewall rules for an LXC container (`node`, `vmid`).
-
-### Storage Tools (3)
-- `pve_storage_list`: List storage pools accessible from a node (`node`, optional `mode`).
-- `pve_storage_status`: Get volume allocation and status for a storage pool (`node`, `storage`).
-- `pve_storage_content`: List disk images, ISOs, templates, and backups in storage (`node`, `storage`, optional `content`).
-
-### Network Tools (1)
-- `pve_network_list`: List network interfaces on a node (`node`, optional `type` filter).
-
-### Access Tools (5)
-- `pve_access_users`: List configured cluster users.
-- `pve_access_groups`: List configured user groups.
-- `pve_access_roles`: List defined privilege roles.
-- `pve_access_domains`: List authentication realms/domains.
-- `pve_access_permissions`: Query user permissions and access control lists (`userid`, `path`).
-
----
-
-## Running the Server
-
-### 1. Launch with Environment Variables
+### 1. Launch Server
 
 ```bash
+# Linux / macOS
 export PVE_HOST="https://pve.example.com:8006"
 export PVE_TOKEN_ID="auditor@pve!mcp"
 export PVE_TOKEN_SECRET="00000000-0000-0000-0000-000000000000"
-export PVE_VERIFY_SSL="false"  # if using self-signed certificate
+export PVE_VERIFY_SSL="false"  # if using self-signed certs
 export MCP_AUTH_TOKEN="your-secure-mcp-bearer-token"
-export PORT="8080"
-
 ./pve-mcp
-```
 
-On Windows (PowerShell):
-```powershell
+# Windows (PowerShell)
 $env:PVE_HOST="https://pve.example.com:8006"
 $env:PVE_TOKEN_ID="auditor@pve!mcp"
 $env:PVE_TOKEN_SECRET="00000000-0000-0000-0000-000000000000"
 $env:PVE_VERIFY_SSL="false"
 $env:MCP_AUTH_TOKEN="your-secure-mcp-bearer-token"
-$env:PORT="8080"
-
 .\pve-mcp.exe
 ```
 
----
+### 2. Client Setup
 
-## Client Configuration
-
-### Claude Desktop / Cursor / Antigravity
-
-Add the server to your MCP client configuration (`mcpServers`):
+Add to your MCP client configuration (`claude_desktop_config.json`, Cursor, or Antigravity):
 
 ```json
 {
@@ -258,12 +106,73 @@ Add the server to your MCP client configuration (`mcpServers`):
 
 ---
 
+## Security & Architecture
+
+- **Strictly Read-Only**: 29 monitoring, status, and telemetry tools. Zero write/mutation endpoints.
+- **Localhost Default**: Binds to `127.0.0.1` by default to prevent accidental LAN exposure.
+- **Bearer Authentication**: Constant-time token verification (`crypto/subtle.ConstantTimeCompare`).
+- **Input Validation**: Strict regex on node and storage identifiers (`^[a-zA-Z0-9_\-]+$`), integer bounds on VMIDs (100–999,999,999), and path segment escaping.
+- **Secret Sanitization**: PVE token secrets and headers are scrubbed from logs and errors without corrupting multi-byte UTF-8 runes.
+- **Transport Hardening**: TLS 1.2+ minimum, custom CA bundles (`PVE_CA_CERT`), SHA-256 fingerprint pinning (`PVE_FINGERPRINT`), and 10MB payload ceiling.
+
+---
+
+## Proxmox VE Permissions
+
+For least-privilege operation, configure a dedicated read-only API token:
+
+1. **Datacenter** → **Permissions** → **API Tokens** → **Add**: `auditor@pve!mcp` (enable **Privilege Separation**).
+2. **Datacenter** → **Permissions** → **Add** → **API Token Permission**:
+   - **Path**: `/`
+   - **API Token**: `auditor@pve!mcp`
+   - **Role**: `PVEAuditor`
+3. *(Optional)* For `pve_node_syslog`, assign a custom role containing `Sys.Syslog` to `/`.
+
+---
+
+## Configuration Reference
+
+| Variable | Required | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `PVE_HOST` | **Yes** | — | Proxmox VE host URL (e.g., `https://pve.example.com:8006`). |
+| `PVE_TOKEN_ID` | **Yes** | — | API Token ID (e.g., `auditor@pve!mcp`). |
+| `PVE_TOKEN_SECRET` | **Yes** | — | API Token Secret UUID. |
+| `PVE_VERIFY_SSL` | No | `true` | Set `false` for self-signed certificates. |
+| `PVE_CA_CERT` | No | — | Path to custom CA PEM bundle. |
+| `PVE_FINGERPRINT` | No | — | SHA-256 fingerprint of PVE SSL cert. |
+| `MCP_BIND_ADDRESS` | No | `127.0.0.1` | Network interface IP to bind. |
+| `PORT` | No | `8080` | Port for the HTTP/SSE listener. |
+| `MCP_AUTH_TOKEN` | No | — | Optional bearer secret required to access MCP server. |
+| `MCP_ALLOWED_ORIGINS` | No | — | Comma-separated allowed HTTP `Origin` headers. |
+| `PVE_TIMEOUT_SECONDS` | No | `30` | HTTP request timeout in seconds. |
+| `LOG_LEVEL` | No | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`). |
+
+---
+
+## Tool Reference (29 Tools)
+
+| Category | Tools | Description |
+| :--- | :--- | :--- |
+| **Cluster (5)** | `pve_cluster_status`<br>`pve_cluster_resources`<br>`pve_cluster_nextid`<br>`pve_cluster_log`<br>`pve_cluster_ha_status` | Quorum, cluster-wide resource inventory (VMs, LXCs, storage), next free VMID, cluster logs, and HA state. |
+| **Node (5)** | `pve_nodes_list`<br>`pve_node_status`<br>`pve_node_version`<br>`pve_node_syslog`<br>`pve_node_rrddata` | Node health summaries, CPU/RAM/uptime telemetry, kernel/PVE package versions, systemd journal logs, and historical RRD metrics. |
+| **QEMU (5)** | `pve_qemu_list`<br>`pve_qemu_status`<br>`pve_qemu_config`<br>`pve_qemu_snapshots`<br>`pve_qemu_firewall` | Virtual machine listings, runtime status, hardware/disk configurations, snapshot trees, and firewall rules. |
+| **LXC (5)** | `pve_lxc_list`<br>`pve_lxc_status`<br>`pve_lxc_config`<br>`pve_lxc_snapshots`<br>`pve_lxc_firewall` | Container listings, operational status, container configuration, snapshot trees, and firewall rules. |
+| **Storage (3)** | `pve_storage_list`<br>`pve_storage_status`<br>`pve_storage_content` | Storage pool listings, volume allocation/usage status, and backup/ISO/template inventory. |
+| **Network (1)** | `pve_network_list` | Network interface configurations and status on a node. |
+| **Access (5)** | `pve_access_users`<br>`pve_access_groups`<br>`pve_access_roles`<br>`pve_access_domains`<br>`pve_access_permissions` | RBAC inventory: cluster users, user groups, privilege roles, auth realms, and effective ACL permissions. |
+
+---
+
 ## Building from Source
 
 ```bash
-# Build standalone Windows binary
+# Windows
 go build -trimpath -ldflags="-s -w" -o pve-mcp.exe ./cmd/pve-mcp
 
-# Cross-compile for Linux (amd64)
+# Linux (amd64)
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o pve-mcp-linux ./cmd/pve-mcp
 ```
+
+## License
+
+MIT
