@@ -50,7 +50,7 @@ For least-privilege operation, configure a dedicated API token with read-only ac
 
 ### Cluster Tools (5)
 - `pve_cluster_status`: Get cluster status and quorum information.
-- `pve_cluster_resources`: Get cluster-wide resources (nodes, VMs, storage, pools) with optional `type` and `mode` filters (defaults to `mode: "compressed"` for token efficiency; use `mode: "full"` for raw Proxmox JSON).
+- `pve_cluster_resources`: Get cluster-wide resources (nodes, VMs, storage, pools) with optional `type` and `mode` filters (defaults to `mode: "compact"` for extreme tabular token efficiency; use `mode: "full"` for raw Proxmox JSON).
 - `pve_cluster_nextid`: Get next available VMID.
 - `pve_cluster_log`: Read cluster-wide log entries with optional `max` limit.
 - `pve_cluster_ha_status`: Get High Availability (HA) cluster status.

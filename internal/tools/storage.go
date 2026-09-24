@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,7 +19,7 @@ func RegisterStorageTools(s *server.MCPServer, client *pve.Client) {
 			mcp.WithDescription("List storage pools accessible from a node"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithString("mode", mcp.Description("Output mode ('compressed' for token-efficient summary, 'full' for raw API output)"), mcp.Enum("compressed", "full")),
+			mcp.WithString("mode", mcp.Description("Output mode ('compact' for tabular text, 'full' for raw API output)"), mcp.Enum("compact", "full")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -31,7 +32,7 @@ func RegisterStorageTools(s *server.MCPServer, client *pve.Client) {
 			}
 			path := fmt.Sprintf("/nodes/%s/storage", url.PathEscape(node))
 
-			if !IsCompressedMode(req.Params.Arguments) {
+			if !IsCompactMode(req.Params.Arguments) {
 				var data json.RawMessage
 				if err := client.Get(ctx, path, nil, &data); err != nil {
 					return ErrorResult(err.Error())
@@ -44,19 +45,16 @@ func RegisterStorageTools(s *server.MCPServer, client *pve.Client) {
 				return ErrorResult(err.Error())
 			}
 
-			compressed := make([]CompressedStorage, 0, len(storages))
+			var sb strings.Builder
+			sb.WriteString("STORAGE\tTYPE\tTOTAL_GB\tUSED_GB\tAVAIL_GB\tSHARED\tCONTENT\n")
 			for _, st := range storages {
-				compressed = append(compressed, CompressedStorage{
-					Storage: st.Storage,
-					Type:    st.Type,
-					TotalGB: st.Total / (1024 * 1024 * 1024),
-					UsedGB:  st.Used / (1024 * 1024 * 1024),
-					AvailGB: st.Avail / (1024 * 1024 * 1024),
-					Shared:  st.Shared,
-					Content: st.Content,
-				})
+				fmt.Fprintf(&sb, "%s\t%s\t%d\t%d\t%d\t%d\t%s\n",
+					st.Storage, st.Type,
+					st.Total/(1024*1024*1024), st.Used/(1024*1024*1024),
+					st.Avail/(1024*1024*1024), st.Shared, st.Content,
+				)
 			}
-			return JSONResult(compressed)
+			return mcp.NewToolResultText(sb.String()), nil
 		},
 	)
 

@@ -3,8 +3,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -33,7 +35,7 @@ func RegisterClusterTools(s *server.MCPServer, client *pve.Client) {
 			mcp.WithDescription("Get cluster-wide resources including nodes, VMs, storage, and pools"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("type", mcp.Description("Resource type filter (vm, storage, node, sdn)"), mcp.Enum("vm", "storage", "node", "sdn")),
-			mcp.WithString("mode", mcp.Description("Output mode ('compressed' for token-efficient summary, 'full' for raw API output)"), mcp.Enum("compressed", "full")),
+			mcp.WithString("mode", mcp.Description("Output mode ('compact' for tabular text, 'full' for raw API output)"), mcp.Enum("compact", "full")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			query := url.Values{}
@@ -41,7 +43,7 @@ func RegisterClusterTools(s *server.MCPServer, client *pve.Client) {
 				query.Set("type", resType)
 			}
 
-			if !IsCompressedMode(req.Params.Arguments) {
+			if !IsCompactMode(req.Params.Arguments) {
 				var rawData json.RawMessage
 				if err := client.Get(ctx, "/cluster/resources", query, &rawData); err != nil {
 					return ErrorResult(err.Error())
@@ -54,21 +56,15 @@ func RegisterClusterTools(s *server.MCPServer, client *pve.Client) {
 				return ErrorResult(err.Error())
 			}
 
-			compressed := make([]CompressedResource, 0, len(resources))
+			var sb strings.Builder
+			sb.WriteString("ID\tTYPE\tNAME\tSTATUS\tNODE\tVMID\tCPU\tRAM_MB\tDISK_GB\n")
 			for _, r := range resources {
-				compressed = append(compressed, CompressedResource{
-					ID:     r.ID,
-					Type:   r.Type,
-					Name:   r.Name,
-					Status: r.Status,
-					Node:   r.Node,
-					VMID:   r.VMID,
-					CPU:    r.CPU,
-					MemMB:  r.MaxMem / (1024 * 1024),
-					DiskGB: r.MaxDisk / (1024 * 1024 * 1024),
-				})
+				fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\t%s\t%d\t%.2f\t%d\t%d\n",
+					r.ID, r.Type, r.Name, r.Status, r.Node, r.VMID, r.CPU,
+					r.MaxMem/(1024*1024), r.MaxDisk/(1024*1024*1024),
+				)
 			}
-			return JSONResult(compressed)
+			return mcp.NewToolResultText(sb.String()), nil
 		},
 	)
 

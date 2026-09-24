@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,7 +19,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client) {
 			mcp.WithDescription("List all LXC containers on a node"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithString("mode", mcp.Description("Output mode ('compressed' for token-efficient summary, 'full' for raw API output)"), mcp.Enum("compressed", "full")),
+			mcp.WithString("mode", mcp.Description("Output mode ('compact' for tabular text, 'full' for raw API output)"), mcp.Enum("compact", "full")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -31,7 +32,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client) {
 			}
 			path := fmt.Sprintf("/nodes/%s/lxc", url.PathEscape(node))
 
-			if !IsCompressedMode(req.Params.Arguments) {
+			if !IsCompactMode(req.Params.Arguments) {
 				var data json.RawMessage
 				if err := client.Get(ctx, path, nil, &data); err != nil {
 					return ErrorResult(err.Error())
@@ -54,21 +55,16 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client) {
 				return ErrorResult(err.Error())
 			}
 
-			compressed := make([]CompressedVM, 0, len(lxcs))
+			var sb strings.Builder
+			sb.WriteString("VMID\tNAME\tSTATUS\tCPUS\tCPU\tRAM_MB\tMAX_RAM_MB\tDISK_GB\tUPTIME_SEC\n")
 			for _, c := range lxcs {
-				compressed = append(compressed, CompressedVM{
-					VMID:     c.VMID,
-					Name:     c.Name,
-					Status:   c.Status,
-					CPUs:     c.CPUs,
-					CPU:      c.CPU,
-					MemMB:    c.Mem / (1024 * 1024),
-					MaxMemMB: c.MaxMem / (1024 * 1024),
-					DiskGB:   c.MaxDisk / (1024 * 1024 * 1024),
-					Uptime:   c.Uptime,
-				})
+				fmt.Fprintf(&sb, "%d\t%s\t%s\t%d\t%.2f\t%d\t%d\t%d\t%d\n",
+					c.VMID, c.Name, c.Status, c.CPUs, c.CPU,
+					c.Mem/(1024*1024), c.MaxMem/(1024*1024),
+					c.MaxDisk/(1024*1024*1024), c.Uptime,
+				)
 			}
-			return JSONResult(compressed)
+			return mcp.NewToolResultText(sb.String()), nil
 		},
 	)
 

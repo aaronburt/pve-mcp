@@ -58,8 +58,8 @@ type CompressedResource struct {
 	DiskGB int64   `json:"disk_gb,omitempty"`
 }
 
-func IsCompressedMode(args any) bool {
-	mode := ParseOptionalString(args, "mode", "compressed")
+func IsCompactMode(args any) bool {
+	mode := ParseOptionalString(args, "mode", "compact")
 	return mode != "full" && mode != "raw" && mode != "detailed"
 }
 
