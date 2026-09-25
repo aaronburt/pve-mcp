@@ -1,0 +1,15 @@
+services:
+  pve-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pve-mcp:latest
+    container_name: pve-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+    environment:
+      - MCP_BIND_ADDRESS=0.0.0.0
+      - PORT=8080

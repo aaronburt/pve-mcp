@@ -137,7 +137,29 @@ export MCP_AUTH_TOKEN="your-secure-bearer-token"
 ./pve-mcp --stdio
 ```
 
-### 2. Client Setup
+### 2. Docker & Docker Compose
+
+Run with Docker:
+```bash
+# Build the minimal distroless image (~15MB)
+docker build -t pve-mcp:latest .
+
+# Run the container
+docker run -d \
+  --name pve-mcp \
+  --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  --env-file .env \
+  -e MCP_BIND_ADDRESS="0.0.0.0" \
+  pve-mcp:latest
+```
+
+Or using Docker Compose:
+```bash
+docker compose up -d
+```
+
+### 3. Client Setup
 
 Add to your MCP client configuration (`claude_desktop_config.json`, Cursor, or Antigravity):
 
