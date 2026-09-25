@@ -33,7 +33,7 @@ type Server struct {
 func CreateMCPServer(cfg *config.Config, client *pve.Client) *mcpserver.MCPServer {
 	mcpServer := mcpserver.NewMCPServer(
 		"pve-mcp",
-		"1.0.0",
+		"1.1.0",
 		mcpserver.WithRecovery(),
 		mcpserver.WithInstructions(Instructions),
 	)
