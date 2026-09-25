@@ -1,67 +1,119 @@
 # pve-mcp
 
 [![Go Version](https://img.shields.io/badge/go-1.26%2B-blue.svg)](https://golang.org)
-[![Scope](https://img.shields.io/badge/scope-strictly_read--only-green.svg)](#security--architecture)
-[![Token Efficiency](https://img.shields.io/badge/token_savings-82%25-brightgreen.svg)](#token-efficiency-compact-tsv-vs-full-json)
-[![Coverage](https://img.shields.io/badge/coverage-87.4%25-success.svg)](#test-coverage--verification)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Resources%20%7C%20Tools%20%7C%20Prompts-blueviolet.svg)](#mcp-protocol-architecture)
+[![Scope](https://img.shields.io/badge/scope-guarded_mutations-green.svg)](#security--architecture)
+[![Coverage](https://img.shields.io/badge/coverage-93.0%25-success.svg)](#test-coverage--verification)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A lightweight, security-hardened Model Context Protocol (MCP) server for Proxmox Virtual Environment (PVE). Built in compiled Go for **82% token reduction**, **sub-15ms cold starts**, and **zero-mutation read-only safety** over Streamable HTTP/SSE.
+A lightweight, security-hardened Model Context Protocol (MCP) server for Proxmox Virtual Environment (PVE). Designed strictly per official MCP specifications: **Resources are nouns (context/state)**, **Tools are verbs (actions/mutations)**, and **Prompts are guided operational workflows**.
 
 ---
 
-## Benchmark: Go `pve-mcp` vs. TypeScript `PVEMCP`
+## MCP Protocol Architecture
 
-| Dimension | TypeScript / Node (`PVEMCP`) | Go (`pve-mcp`) | Advantage |
-| :--- | :---: | :---: | :--- |
-| **Token Consumption** | ~2,880 tokens / scan | **~518 tokens / scan** | **82% fewer tokens per query loop** |
-| **Cold-Start Time** | 250ms – 600ms (Node V8) | **5ms – 15ms** (Native binary) | **30x faster cold starts** |
-| **Memory Footprint (RSS)** | ~60MB – 90MB | **~8MB – 14MB** | **~85% less memory usage** |
-| **Connection Transport** | Standard Node fetch | Pooled Keep-Alive HTTP/TLS | Zero socket churn on repeat queries |
-| **Concurrency** | Single-threaded event loop | Goroutines (M:N native threads) | Parallel dispatch with no GC pauses |
-
----
-
-## Token Efficiency: `compact` (TSV) vs. `full` (JSON)
-
-Standard Proxmox API endpoints dump dozens of low-level kernel telemetry counters (`pressurecpufull`, `shares`, `balloon_min`, raw byte counters) on every call. 
-
-`pve-mcp` addresses this at the protocol level:
-- **Wire Envelope**: All responses adhere to the standard MCP JSON-RPC protocol (`{"content": [{"type": "text", "text": "..."}]}`).
-- **Payload (`compact` — Default)**: The `text` field contains a clean, header-delimited **Tabular TSV** table. LLMs parse tables natively with high attention fidelity while slashing context cost by **82%**.
-- **Payload (`full`)**: The `text` field contains the unpruned, raw Proxmox JSON dump for deep debugging.
-
-### Anonymized Output Comparison
-
-```text
-================================================================================
-MODE: "compact" (Default — Tabular TSV inside MCP text content) [~50 tokens]
-================================================================================
-VMID	NAME	STATUS	CPUS	CPU	RAM_MB	MAX_RAM_MB	DISK_GB	UPTIME_SEC
-100	web-app	running	2	0.02	1024	2048		20	360000
-101	db-node	running	4	0.15	4096	8192		50	360000
-102	cache-1	stopped	1	0.00	0	1024		10	0
-
-================================================================================
-MODE: "full" (Raw JSON inside MCP text content) [~430 tokens]
-================================================================================
-[
-  {"vmid":100,"name":"web-app","status":"running","cpus":2,"cpu":0.02,"mem":1073741824,"maxmem":2147483648,"disk":5368709120,"maxdisk":21474836480,"uptime":360000,"pressurecpufull":0,"shares":1000,...},
-  {"vmid":101,"name":"db-node","status":"running","cpus":4,"cpu":0.15,"mem":4294967296,"maxmem":8589934592,"disk":21474836480,"maxdisk":53687091200,"uptime":360000,"pressurecpufull":0,"shares":1000,...}
-]
+```
+                    ┌─────────────────────────────────────────────────────┐
+                    │                      pve-mcp                        │
+                    ├─────────────────┬─────────────────┬─────────────────┤
+                    │  MCP Resources  │    MCP Tools    │   MCP Prompts   │
+                    │   (Read Nouns)  │ (Action Verbs)  │   (Workflows)   │
+                    ├─────────────────┼─────────────────┼─────────────────┤
+                    │ 28+ URI Schemes │ 16 Active Tools │ 5 Operational   │
+                    │ pve://cluster/* │ 2-Phase Confirm │ Health Audit    │
+                    │ pve://nodes/*   │ UPID Tracking   │ Incident Triage │
+                    │ pve://storage/* │ Progress Tokens │ Node Evacuation │
+                    │ pve://access/*  │ Force Guards    │ Workload Plan   │
+                    └─────────────────┴─────────────────┴─────────────────┘
 ```
 
-### Measured Token Savings
+---
 
-| Tool | `compact` (TSV) | `full` (JSON) | Token Reduction |
-| :--- | :---: | :---: | :---: |
-| `pve_qemu_list` (4 VMs) | **~71 tokens** | ~430 tokens | **83.5%** |
-| `pve_lxc_list` (7 Containers) | **~107 tokens** | ~890 tokens | **88.0%** |
-| `pve_storage_list` (5 Storage Pools) | **~71 tokens** | ~240 tokens | **70.4%** |
-| `pve_cluster_resources` (18 Items) | **~269 tokens** | ~1,320 tokens | **79.6%** |
-| **Total (Core Inspection Tools)** | **~518 tokens** | **~2,880 tokens** | **82.0%** |
+## 1. MCP Resources & Resource Templates (`pve://...`)
 
-*(To request unpruned raw API telemetry, pass `mode: "full"` to any list tool).*
+All cluster state, telemetry, guest configurations, storage pools, and access controls are exposed as standard MCP Resources.
+
+### Cluster & Node Resources
+| URI | Description |
+| :--- | :--- |
+| `pve://cluster/status` | Cluster membership, quorum status, and node summary |
+| `pve://cluster/resources` | Unified inventory of nodes, VMs, CTs, and storage pools |
+| `pve://cluster/ha-status` | High Availability manager state, services, and failovers |
+| `pve://cluster/nextid` | Next available free VMID / CTID |
+| `pve://cluster/log` | Recent cluster-wide audit and operational log entries |
+| `pve://nodes` | Cluster node list and operational status |
+| `pve://nodes/{node}/status` | CPU, RAM, kernel, load metrics, and uptime for `{node}` |
+| `pve://nodes/{node}/version` | PVE package release and repository version info |
+| `pve://nodes/{node}/syslog` | Systemd journal entries for `{node}` |
+| `pve://nodes/{node}/network` | Network interfaces, Linux bridges, and bonds |
+| `pve://nodes/{node}/tasks/{+upid}` | Status and exit code of background task `{+upid}` |
+
+### Virtual Machine Resources (QEMU)
+| URI Template | Description |
+| :--- | :--- |
+| `pve://nodes/{node}/qemu` | VM inventory on `{node}` |
+| `pve://nodes/{node}/qemu/{vmid}/status` | Real-time execution status and resource metrics |
+| `pve://nodes/{node}/qemu/{vmid}/config` | Complete VM hardware configuration (cores, memory, disks, NICs) |
+| `pve://nodes/{node}/qemu/{vmid}/snapshots` | Snapshot tree and parent-child hierarchy |
+| `pve://nodes/{node}/qemu/{vmid}/firewall` | Firewall rules and security options |
+
+### Container Resources (LXC)
+| URI Template | Description |
+| :--- | :--- |
+| `pve://nodes/{node}/lxc` | Container inventory on `{node}` |
+| `pve://nodes/{node}/lxc/{vmid}/status` | Real-time status and resource usage |
+| `pve://nodes/{node}/lxc/{vmid}/config` | Container configuration (cores, memory, mount points, net) |
+| `pve://nodes/{node}/lxc/{vmid}/snapshots` | Snapshot hierarchy for container `{vmid}` |
+| `pve://nodes/{node}/lxc/{vmid}/firewall` | Firewall rules and options |
+
+### Storage & Access Resources
+| URI / Template | Description |
+| :--- | :--- |
+| `pve://storage` | Storage definitions and backend driver types |
+| `pve://nodes/{node}/storage/{storage}/status` | Capacity, used bytes, and pool status |
+| `pve://nodes/{node}/storage/{storage}/content` | Storage volumes, ISOs, templates, and backups |
+| `pve://access/users` | Proxmox user accounts and API token metadata |
+| `pve://access/groups` | User access groups |
+| `pve://access/roles` | Role definitions and privilege bundles |
+| `pve://access/domains` | Authentication realms (pam, pve, LDAP, OIDC) |
+| `pve://access/permissions` | Effective ACL tree |
+
+---
+
+## 2. MCP Tools (16 Active Verbs)
+
+Tools are reserved exclusively for state mutations and task monitoring:
+
+| Category | Tool | Parameters | Description |
+| :--- | :--- | :--- | :--- |
+| **Tasks** | `pve_task_status` | `node`, `upid` | Query Proxmox task exit status by UPID. |
+| **QEMU** | `pve_qemu_power` | `node`, `vmid`, `action`, `force`, `confirm` | Power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). Hard stop requires `force: true`. |
+| | `pve_qemu_update_hardware` | `node`, `vmid`, `cores`, `memory_mb`, `balloon_mb`, `name`, `description`, `onboot`, `confirm` | Hotplug/update CPU cores, RAM, ballooning, description, and onboot. |
+| | `pve_qemu_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand virtual disk capacity (disk shrinking is strictly rejected). |
+| | `pve_qemu_update_network` | `node`, `vmid`, `net_id`, `bridge`, `tag`, `firewall`, `rate`, `confirm` | Update or attach network interfaces with MAC address preservation. |
+| | `pve_qemu_clone` | `node`, `vmid`, `newid`, `name`, `full`, `storage`, `target`, `wait`, `confirm` | Full or linked VM cloning with progress notification support. |
+| | `pve_qemu_destroy` | `node`, `vmid`, `purge`, `destroy_unreferenced_disks`, `confirm` | Safely remove stopped VM. Requires `ALLOW_DESTROY=true` on server. |
+| | `pve_qemu_protection` | `node`, `vmid`, `enable` | Set or remove deletion protection flag. |
+| **LXC** | `pve_lxc_power` | `node`, `vmid`, `action`, `force`, `confirm` | Container power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). |
+| | `pve_lxc_update_hardware` | `node`, `vmid`, `cores`, `memory_mb`, `swap_mb`, `description`, `onboot`, `confirm` | Update container cores, RAM, swap, and description. |
+| | `pve_lxc_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand rootfs or mount point capacity. |
+| | `pve_lxc_update_network` | `node`, `vmid`, `net_id`, `bridge`, `tag`, `firewall`, `rate`, `confirm` | Update or attach container network interfaces. |
+| | `pve_lxc_clone` | `node`, `vmid`, `newid`, `hostname`, `full`, `storage`, `target`, `wait`, `confirm` | Clone container with progress notification support. |
+| | `pve_lxc_create` | `node`, `vmid`, `ostemplate`, `hostname`, `cores`, `memory`, `disk`, `storage`, `bridge`, `ip`, `unprivileged`, `password`, `start`, `wait`, `confirm` | Provision a brand new container from an OS template. |
+| | `pve_lxc_destroy` | `node`, `vmid`, `purge`, `destroy_unreferenced_disks`, `confirm` | Safely remove stopped container. Requires `ALLOW_DESTROY=true`. |
+| | `pve_lxc_protection` | `node`, `vmid`, `enable` | Set or remove deletion protection flag. |
+
+---
+
+## 3. MCP Prompts (Operational Workflows)
+
+Standard multi-step operational prompts guide the LLM through critical datacenter procedures:
+
+1. **`cluster_health_audit`**: Inspects quorum status, node resource pressures, HA manager status, storage pools, and recent cluster logs.
+2. **`vm_incident_triage`** (`node`, `vmid`): Deep diagnostic triage for an unhealthy or failed VM, inspecting runtime status, configuration, host syslog, and task logs.
+3. **`safe_host_evacuation`** (`source_node`, `target_node`): Pre-maintenance evacuation planner verifying target capacity and proposing migration ordering.
+4. **`provision_workload_planner`** (`workload_type`, `cores`, `memory_mb`, `disk_gb`): Evaluates cluster nodes, checks storage pool headroom, and fetches the next free VMID.
+5. **`storage_cleanup_advisor`** (`node`, `storage`): Audits storage volumes, ISOs, snapshots, and backup archives to identify reclaimable space.
 
 ---
 
@@ -70,21 +122,19 @@ MODE: "full" (Raw JSON inside MCP text content) [~430 tokens]
 ### 1. Launch Server
 
 ```bash
-# Linux / macOS
+# Environment Variables
 export PVE_HOST="https://pve.example.com:8006"
 export PVE_TOKEN_ID="auditor@pve!mcp"
 export PVE_TOKEN_SECRET="00000000-0000-0000-0000-000000000000"
-export PVE_VERIFY_SSL="false"  # if using self-signed certs
-export MCP_AUTH_TOKEN="your-secure-mcp-bearer-token"
+export PVE_VERIFY_SSL="false"  # if using self-signed certificates
+export PVE_ALLOW_MUTATIONS="true"  # if mutations are desired
+export MCP_AUTH_TOKEN="your-secure-bearer-token"
+
+# Run HTTP/SSE Server
 ./pve-mcp
 
-# Windows (PowerShell)
-$env:PVE_HOST="https://pve.example.com:8006"
-$env:PVE_TOKEN_ID="auditor@pve!mcp"
-$env:PVE_TOKEN_SECRET="00000000-0000-0000-0000-000000000000"
-$env:PVE_VERIFY_SSL="false"
-$env:MCP_AUTH_TOKEN="your-secure-mcp-bearer-token"
-.\pve-mcp.exe
+# Or run in Stdio mode for local agent integration
+./pve-mcp --stdio
 ```
 
 ### 2. Client Setup
@@ -97,7 +147,27 @@ Add to your MCP client configuration (`claude_desktop_config.json`, Cursor, or A
     "proxmox": {
       "url": "http://127.0.0.1:8080/sse",
       "headers": {
-        "Authorization": "Bearer your-secure-mcp-bearer-token"
+        "Authorization": "Bearer your-secure-bearer-token"
+      }
+    }
+  }
+}
+```
+
+Or for Stdio transport:
+
+```json
+{
+  "mcpServers": {
+    "proxmox": {
+      "command": "/path/to/pve-mcp",
+      "args": ["--stdio"],
+      "env": {
+        "PVE_HOST": "https://pve.example.com:8006",
+        "PVE_TOKEN_ID": "root@pam!token",
+        "PVE_TOKEN_SECRET": "00000000-0000-0000-0000-000000000000",
+        "PVE_VERIFY_SSL": "false",
+        "PVE_ALLOW_MUTATIONS": "true"
       }
     }
   }
@@ -108,25 +178,14 @@ Add to your MCP client configuration (`claude_desktop_config.json`, Cursor, or A
 
 ## Security & Architecture
 
-- **Strictly Read-Only**: 29 monitoring, status, and telemetry tools. Zero write/mutation endpoints.
-- **Localhost Default**: Binds to `127.0.0.1` by default to prevent accidental LAN exposure.
-- **Bearer Authentication**: Constant-time token verification (`crypto/subtle.ConstantTimeCompare`).
-- **Input Validation**: Strict regex on node and storage identifiers (`^[a-zA-Z0-9_\-]+$`), integer bounds on VMIDs (100–999,999,999), and path segment escaping.
-- **Secret Sanitization**: PVE token secrets and headers are scrubbed from logs and errors without corrupting multi-byte UTF-8 runes.
-- **Transport Hardening**: TLS 1.2+ minimum, custom CA bundles (`PVE_CA_CERT`), SHA-256 fingerprint pinning (`PVE_FINGERPRINT`), and 10MB payload ceiling.
-
----
-
-## Proxmox VE Permissions
-
-For least-privilege operation, configure a dedicated read-only API token:
-
-1. **Datacenter** → **Permissions** → **API Tokens** → **Add**: `auditor@pve!mcp` (enable **Privilege Separation**).
-2. **Datacenter** → **Permissions** → **Add** → **API Token Permission**:
-   - **Path**: `/`
-   - **API Token**: `auditor@pve!mcp`
-   - **Role**: `PVEAuditor`
-3. *(Optional)* For `pve_node_syslog`, assign a custom role containing `Sys.Syslog` to `/`.
+- **Two-Phase Confirmation**: Calling any mutating tool with `confirm=false` returns an explicit `[DRY RUN PREVIEW - USER CONFIRMATION REQUIRED]` with a before-and-after diff. Mutations only execute when `confirm: true` is passed.
+- **Environment Gating**:
+  - `PVE_ALLOW_MUTATIONS` defaults to `false`. Mutating tools reject execution immediately when disabled.
+  - `PVE_ALLOW_DESTROY` defaults to `false`. Deletion tools (`pve_qemu_destroy`, `pve_lxc_destroy`) are permanently disabled until explicitly enabled.
+- **Protection & State Guards**: Machines must be stopped before destruction. Machines marked with `protection: 1` reject deletion requests.
+- **Disk Shrinking Prevention**: Validates target disk size strictly exceeds current capacity before dispatching to Proxmox.
+- **Progress Notifications**: Async operations support `notifications/progress` through client progress tokens.
+- **Transport Hardening**: TLS 1.2+ minimum, custom CA bundles (`PVE_CA_CERT`), SHA-256 fingerprint pinning (`PVE_FINGERPRINT`), and constant-time bearer authentication.
 
 ---
 
@@ -137,6 +196,8 @@ For least-privilege operation, configure a dedicated read-only API token:
 | `PVE_HOST` | **Yes** | — | Proxmox VE host URL (e.g., `https://pve.example.com:8006`). |
 | `PVE_TOKEN_ID` | **Yes** | — | API Token ID (e.g., `auditor@pve!mcp`). |
 | `PVE_TOKEN_SECRET` | **Yes** | — | API Token Secret UUID. |
+| `PVE_ALLOW_MUTATIONS` | No | `false` | Set `true` to enable VM/LXC power, hardware, clone, create, and protection operations. |
+| `PVE_ALLOW_DESTROY` | No | `false` | Set `true` to explicitly allow permanent machine deletion (`pve_qemu_destroy`, `pve_lxc_destroy`). |
 | `PVE_VERIFY_SSL` | No | `true` | Set `false` for self-signed certificates. |
 | `PVE_CA_CERT` | No | — | Path to custom CA PEM bundle. |
 | `PVE_FINGERPRINT` | No | — | SHA-256 fingerprint of PVE SSL cert. |
@@ -146,20 +207,6 @@ For least-privilege operation, configure a dedicated read-only API token:
 | `MCP_ALLOWED_ORIGINS` | No | — | Comma-separated allowed HTTP `Origin` headers. |
 | `PVE_TIMEOUT_SECONDS` | No | `30` | HTTP request timeout in seconds. |
 | `LOG_LEVEL` | No | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`). |
-
----
-
-## Tool Reference (29 Tools)
-
-| Category | Tools | Description |
-| :--- | :--- | :--- |
-| **Cluster (5)** | `pve_cluster_status`<br>`pve_cluster_resources`<br>`pve_cluster_nextid`<br>`pve_cluster_log`<br>`pve_cluster_ha_status` | Quorum, cluster-wide resource inventory (VMs, LXCs, storage), next free VMID, cluster logs, and HA state. |
-| **Node (5)** | `pve_nodes_list`<br>`pve_node_status`<br>`pve_node_version`<br>`pve_node_syslog`<br>`pve_node_rrddata` | Node health summaries, CPU/RAM/uptime telemetry, kernel/PVE package versions, systemd journal logs, and historical RRD metrics. |
-| **QEMU (5)** | `pve_qemu_list`<br>`pve_qemu_status`<br>`pve_qemu_config`<br>`pve_qemu_snapshots`<br>`pve_qemu_firewall` | Virtual machine listings, runtime status, hardware/disk configurations, snapshot trees, and firewall rules. |
-| **LXC (5)** | `pve_lxc_list`<br>`pve_lxc_status`<br>`pve_lxc_config`<br>`pve_lxc_snapshots`<br>`pve_lxc_firewall` | Container listings, operational status, container configuration, snapshot trees, and firewall rules. |
-| **Storage (3)** | `pve_storage_list`<br>`pve_storage_status`<br>`pve_storage_content` | Storage pool listings, volume allocation/usage status, and backup/ISO/template inventory. |
-| **Network (1)** | `pve_network_list` | Network interface configurations and status on a node. |
-| **Access (5)** | `pve_access_users`<br>`pve_access_groups`<br>`pve_access_roles`<br>`pve_access_domains`<br>`pve_access_permissions` | RBAC inventory: cluster users, user groups, privilege roles, auth realms, and effective ACL permissions. |
 
 ---
 
@@ -173,11 +220,7 @@ go build -trimpath -ldflags="-s -w" -o pve-mcp.exe ./cmd/pve-mcp
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o pve-mcp-linux ./cmd/pve-mcp
 ```
 
-## AI & Safety Disclaimer
-
-- **LLM Interpretation**: Large Language Models (LLMs) are probabilistic systems capable of misinterpreting metrics, drawing incorrect conclusions, or proposing flawed remediation steps. While `pve-mcp` is strictly read-only to prevent state-changing actions, operators should always verify cluster conditions directly via the Proxmox VE Web UI or CLI before executing administrative commands.
-- **No Operational Warranty**: This software is provided for telemetry and inspection purposes. The authors accept no responsibility or liability for actions taken by autonomous agents or humans based on LLM interpretations of Proxmox cluster data.
-- **AI-Assisted Development**: This codebase was developed with AI assistance and validated through automated testing, security audits, and continuous verification.
+---
 
 ## License
 

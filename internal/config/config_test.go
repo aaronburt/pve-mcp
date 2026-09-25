@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -55,6 +56,12 @@ func TestLoadFromEnv_DefaultsAndHardening(t *testing.T) {
 	if !cfg.VerifySSL {
 		t.Errorf("got verifySSL false, want default true")
 	}
+	if cfg.AllowMutations {
+		t.Errorf("got AllowMutations true, want default false")
+	}
+	if cfg.AllowDestroy {
+		t.Errorf("got AllowDestroy true, want default false")
+	}
 }
 
 func TestLoadFromEnv_CustomOverrides(t *testing.T) {
@@ -69,6 +76,7 @@ func TestLoadFromEnv_CustomOverrides(t *testing.T) {
 	t.Setenv("PVE_CA_CERT", "/etc/ssl/pve-ca.pem")
 	t.Setenv("PVE_FINGERPRINT", "AA:BB:CC:DD:EE:FF:11:22:33:44:55:66:77:88:99:00:AA:BB:CC:DD:EE:FF:11:22:33:44:55:66:77:88:99:00")
 	t.Setenv("MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+	t.Setenv("PVE_ALLOW_MUTATIONS", "true")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -80,6 +88,9 @@ func TestLoadFromEnv_CustomOverrides(t *testing.T) {
 	}
 	if cfg.VerifySSL {
 		t.Errorf("got verifySSL true, want false")
+	}
+	if !cfg.AllowMutations {
+		t.Errorf("got AllowMutations false, want true")
 	}
 	if cfg.BindAddress != "0.0.0.0" {
 		t.Errorf("got bind %s, want 0.0.0.0", cfg.BindAddress)
@@ -113,5 +124,51 @@ func TestLoadFromEnv_InvalidTimeout(t *testing.T) {
 	_, err := config.LoadFromEnv()
 	if err == nil {
 		t.Fatal("expected error for non-numeric timeout")
+	}
+}
+
+func TestLoadFromEnv_AllowDestroy(t *testing.T) {
+	t.Setenv("PVE_HOST", "https://pve.example.com")
+	t.Setenv("PVE_TOKEN_ID", "root@pam!token")
+	t.Setenv("PVE_TOKEN_SECRET", "secret")
+
+	t.Setenv("PVE_ALLOW_DESTROY", "true")
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.AllowDestroy {
+		t.Errorf("expected AllowDestroy true when PVE_ALLOW_DESTROY=true")
+	}
+
+	t.Setenv("PVE_ALLOW_DESTROY", "0")
+	cfg2, err := config.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg2.AllowDestroy {
+		t.Errorf("expected AllowDestroy false when PVE_ALLOW_DESTROY=0")
+	}
+}
+
+func TestLoadDotEnv(t *testing.T) {
+	config.LoadDotEnv("non_existent_file_path.env")
+
+	tmp := t.TempDir() + "/test.env"
+	content := "# comment line\nVAR1=hello\nVAR2=\"world\"\nVAR3='antigravity'\nVAR4=simple\nEMPTY=\nNO_EQUALS\n"
+	if err := os.WriteFile(tmp, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write temp env: %v", err)
+	}
+
+	config.LoadDotEnv(tmp)
+
+	if os.Getenv("VAR1") != "hello" {
+		t.Errorf("got %s, want hello", os.Getenv("VAR1"))
+	}
+	if os.Getenv("VAR2") != "world" {
+		t.Errorf("got %s, want world", os.Getenv("VAR2"))
+	}
+	if os.Getenv("VAR3") != "antigravity" {
+		t.Errorf("got %s, want antigravity", os.Getenv("VAR3"))
 	}
 }

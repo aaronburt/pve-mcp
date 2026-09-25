@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/subtle"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -76,6 +77,13 @@ func OriginMiddleware(cfg *config.Config, next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+func RequestLoggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.Info("incoming http request", "method", r.Method, "url", r.URL.String())
 		next.ServeHTTP(w, r)
 	})
 }

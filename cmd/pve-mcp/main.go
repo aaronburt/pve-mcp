@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -14,9 +16,10 @@ import (
 	"github.com/aaronburt/pve-mcp/internal/config"
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/aaronburt/pve-mcp/internal/server"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
-func setupLogger(levelStr string) {
+func setupLogger(levelStr string, out io.Writer) {
 	var level slog.Level
 	switch strings.ToLower(levelStr) {
 	case "debug":
@@ -29,34 +32,66 @@ func setupLogger(levelStr string) {
 		level = slog.LevelInfo
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	handler := slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: level,
 	})
 	slog.SetDefault(slog.New(handler))
 }
 
 func main() {
+	config.LoadDotEnv(".env")
+	if exe, err := os.Executable(); err == nil {
+		config.LoadDotEnv(filepath.Join(filepath.Dir(exe), ".env"))
+	}
+
+	isStdio := os.Getenv("MCP_TRANSPORT") == "stdio"
+	for _, arg := range os.Args[1:] {
+		if arg == "--stdio" || arg == "-stdio" {
+			isStdio = true
+			break
+		}
+	}
+
+	if isStdio {
+		setupLogger("error", os.Stderr)
+	}
+
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	setupLogger(cfg.LogLevel)
-
-	slog.Info("starting pve-mcp server",
-		"host", cfg.Host,
-		"token_id", cfg.TokenID,
-		"verify_ssl", cfg.VerifySSL,
-		"bind_address", cfg.BindAddress,
-		"port", cfg.Port,
-		"auth_required", cfg.MCPAuthToken != "",
-	)
+	if !isStdio {
+		setupLogger(cfg.LogLevel, os.Stdout)
+		slog.Info("starting pve-mcp server",
+			"host", cfg.Host,
+			"token_id", cfg.TokenID,
+			"verify_ssl", cfg.VerifySSL,
+			"bind_address", cfg.BindAddress,
+			"port", cfg.Port,
+			"auth_required", cfg.MCPAuthToken != "",
+		)
+	} else {
+		setupLogger(cfg.LogLevel, os.Stderr)
+	}
 
 	client, err := pve.NewClient(cfg)
 	if err != nil {
 		slog.Error("failed to initialize pve client", "error", err)
 		os.Exit(1)
+	}
+
+	if isStdio {
+		mcpServer := server.CreateMCPServer(cfg, client)
+		stdioServer := mcpserver.NewStdioServer(mcpServer)
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := stdioServer.Listen(ctx, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("stdio server error", "error", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	srv, err := server.NewServer(cfg, client)

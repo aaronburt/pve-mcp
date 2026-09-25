@@ -174,3 +174,106 @@ func (c *Client) Get(ctx context.Context, path string, query url.Values, target 
 
 	return nil
 }
+
+func (c *Client) Post(ctx context.Context, path string, form url.Values, target any) error {
+	return c.sendWithBody(ctx, http.MethodPost, path, form, target)
+}
+
+func (c *Client) Put(ctx context.Context, path string, form url.Values, target any) error {
+	return c.sendWithBody(ctx, http.MethodPut, path, form, target)
+}
+
+func (c *Client) Delete(ctx context.Context, path string, form url.Values, target any) error {
+	return c.sendWithBody(ctx, http.MethodDelete, path, form, target)
+}
+
+type TaskStatus struct {
+	Status     string `json:"status"`
+	ExitStatus string `json:"exitstatus"`
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	User       string `json:"user"`
+	StartTime  int64  `json:"starttime"`
+	PID        int    `json:"pid"`
+}
+
+func (c *Client) GetTaskStatus(ctx context.Context, node string, upid string) (*TaskStatus, error) {
+	path := fmt.Sprintf("/nodes/%s/tasks/%s/status", url.PathEscape(node), url.PathEscape(upid))
+	var taskStatus TaskStatus
+	if err := c.Get(ctx, path, nil, &taskStatus); err != nil {
+		return nil, err
+	}
+	return &taskStatus, nil
+}
+
+func (c *Client) sendWithBody(ctx context.Context, method string, path string, form url.Values, target any) error {
+	cleanPath := path
+	if !strings.HasPrefix(cleanPath, "/") {
+		cleanPath = "/" + cleanPath
+	}
+	if !strings.HasPrefix(cleanPath, "/api2/json") {
+		cleanPath = "/api2/json" + cleanPath
+	}
+
+	fullURL := c.baseURL + cleanPath
+
+	var bodyReader io.Reader
+	if method == http.MethodDelete {
+		if len(form) > 0 {
+			fullURL += "?" + form.Encode()
+		}
+	} else if len(form) > 0 {
+		bodyReader = strings.NewReader(form.Encode())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return errors.New(c.Sanitize(err.Error()))
+	}
+
+	req.Header.Set("Authorization", c.tokenHeader)
+	req.Header.Set("Accept", "application/json")
+	if method != http.MethodDelete && len(form) > 0 {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.New(c.Sanitize(err.Error()))
+	}
+	defer resp.Body.Close()
+
+	limitedReader := io.LimitReader(resp.Body, maxPayloadBytes+1)
+	body, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return errors.New(c.Sanitize(err.Error()))
+	}
+
+	if len(body) > maxPayloadBytes {
+		return errors.New("response exceeds maximum allowed size (10MB)")
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("pve api error (status %d): %s", resp.StatusCode, c.Sanitize(string(body)))
+	}
+
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return fmt.Errorf("failed to decode response envelope: %w", err)
+	}
+
+	if target != nil {
+		if rawPtr, ok := target.(*json.RawMessage); ok {
+			*rawPtr = envelope.Data
+			return nil
+		}
+		if err := json.Unmarshal(envelope.Data, target); err != nil {
+			return fmt.Errorf("failed to decode response data: %w", err)
+		}
+	}
+
+	return nil
+}

@@ -22,6 +22,32 @@ type Config struct {
 	AllowedOrigins []string
 	Timeout        time.Duration
 	LogLevel       string
+	AllowMutations bool
+	AllowDestroy   bool
+}
+
+func LoadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		eqIdx := strings.Index(trimmed, "=")
+		if eqIdx == -1 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:eqIdx])
+		val := strings.TrimSpace(trimmed[eqIdx+1:])
+		val = strings.Trim(val, `"'`)
+		if _, exists := os.LookupEnv(key); !exists {
+			os.Setenv(key, val)
+		}
+	}
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -98,6 +124,22 @@ func LoadFromEnv() (*Config, error) {
 	fingerprint = strings.ReplaceAll(fingerprint, ":", "")
 	fingerprint = strings.ReplaceAll(fingerprint, " ", "")
 
+	allowMutations := false
+	if val, ok := os.LookupEnv("PVE_ALLOW_MUTATIONS"); ok {
+		lowerVal := strings.ToLower(strings.TrimSpace(val))
+		if lowerVal == "true" || lowerVal == "1" || lowerVal == "yes" || lowerVal == "on" {
+			allowMutations = true
+		}
+	}
+
+	allowDestroy := false
+	if val, ok := os.LookupEnv("PVE_ALLOW_DESTROY"); ok {
+		lowerVal := strings.ToLower(strings.TrimSpace(val))
+		if lowerVal == "true" || lowerVal == "1" || lowerVal == "yes" || lowerVal == "on" {
+			allowDestroy = true
+		}
+	}
+
 	return &Config{
 		Host:           cleanHost,
 		TokenID:        tokenID,
@@ -111,5 +153,7 @@ func LoadFromEnv() (*Config, error) {
 		AllowedOrigins: allowedOrigins,
 		Timeout:        timeout,
 		LogLevel:       logLevel,
+		AllowMutations: allowMutations,
+		AllowDestroy:   allowDestroy,
 	}, nil
 }
