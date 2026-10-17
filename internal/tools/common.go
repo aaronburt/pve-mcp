@@ -236,16 +236,60 @@ func IsForce(args any) bool {
 	return ParseOptionalBool(args, "force", false)
 }
 
-func EnsureMutationsAllowed(cfg *config.Config) error {
-	if cfg == nil || !cfg.AllowMutations {
-		return errors.New("mutations are disabled. Set PVE_ALLOW_MUTATIONS=true in server environment to enable state-changing operations")
+func ValidateAllowedNode(node string, allowedNodes []string) error {
+	validated, err := ValidateNode(node)
+	if err != nil {
+		return err
+	}
+	if len(allowedNodes) == 0 {
+		return nil
+	}
+	for _, n := range allowedNodes {
+		if strings.EqualFold(n, validated) {
+			return nil
+		}
+	}
+	return fmt.Errorf("node %q is not in the allowed nodes list (%s)", validated, strings.Join(allowedNodes, ", "))
+}
+
+func EnsurePowerAllowed(cfg *config.Config) error {
+	if cfg == nil || !cfg.EnablePower {
+		return errors.New("power operations are disabled. Set PVE_ENABLE_POWER=true in server environment")
+	}
+	return nil
+}
+
+func EnsureConfigAllowed(cfg *config.Config) error {
+	if cfg == nil || !cfg.EnableConfig {
+		return errors.New("configuration updates are disabled. Set PVE_ENABLE_CONFIG=true in server environment")
+	}
+	return nil
+}
+
+func EnsureStorageAllowed(cfg *config.Config) error {
+	if cfg == nil || !cfg.EnableStorage {
+		return errors.New("storage and provisioning operations are disabled. Set PVE_ENABLE_STORAGE=true in server environment")
 	}
 	return nil
 }
 
 func EnsureDestroyAllowed(cfg *config.Config) error {
-	if cfg == nil || !cfg.AllowDestroy {
-		return errors.New("machine destruction is disabled. Set PVE_ALLOW_DESTROY=true in server environment to enable permanent deletion of VMs and containers")
+	if cfg == nil || !cfg.EnableDestroy {
+		return errors.New("destructive operations are disabled. Set PVE_ENABLE_DESTROY=true in server environment")
+	}
+	return nil
+}
+
+func EnsureNodeOpsAllowed(cfg *config.Config) error {
+	if cfg == nil || !cfg.EnableNodeOps {
+		return errors.New("node operations are disabled. Set PVE_ENABLE_NODE_OPS=true in server environment")
+	}
+	return nil
+}
+
+func EnsureNodeShutdownAllowed(cfg *config.Config) error {
+	if cfg == nil || !cfg.EnableNodeShutdown {
+		return errors.New("node shutdown is disabled. Set PVE_ENABLE_NODE_SHUTDOWN=true in server environment")
 	}
 	return nil
 }

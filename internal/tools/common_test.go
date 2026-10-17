@@ -168,19 +168,76 @@ func TestJSONAndErrorResult(t *testing.T) {
 	}
 }
 
-func TestEnsureMutationsAllowed(t *testing.T) {
-	if err := tools.EnsureMutationsAllowed(nil); err == nil {
+func TestEnsureCategoryAllowed(t *testing.T) {
+	if err := tools.EnsurePowerAllowed(nil); err == nil {
+		t.Fatal("expected error when cfg is nil")
+	}
+	if err := tools.EnsureConfigAllowed(nil); err == nil {
+		t.Fatal("expected error when cfg is nil")
+	}
+	if err := tools.EnsureStorageAllowed(nil); err == nil {
+		t.Fatal("expected error when cfg is nil")
+	}
+	if err := tools.EnsureNodeOpsAllowed(nil); err == nil {
+		t.Fatal("expected error when cfg is nil")
+	}
+	if err := tools.EnsureNodeShutdownAllowed(nil); err == nil {
 		t.Fatal("expected error when cfg is nil")
 	}
 
-	cfgDisabled := &config.Config{AllowMutations: false}
-	if err := tools.EnsureMutationsAllowed(cfgDisabled); err == nil {
-		t.Fatal("expected error when AllowMutations is false")
+	cfgDisabled := &config.Config{}
+	if err := tools.EnsurePowerAllowed(cfgDisabled); err == nil {
+		t.Fatal("expected error when EnablePower is false")
+	}
+	if err := tools.EnsureConfigAllowed(cfgDisabled); err == nil {
+		t.Fatal("expected error when EnableConfig is false")
+	}
+	if err := tools.EnsureStorageAllowed(cfgDisabled); err == nil {
+		t.Fatal("expected error when EnableStorage is false")
+	}
+	if err := tools.EnsureNodeOpsAllowed(cfgDisabled); err == nil {
+		t.Fatal("expected error when EnableNodeOps is false")
+	}
+	if err := tools.EnsureNodeShutdownAllowed(cfgDisabled); err == nil {
+		t.Fatal("expected error when EnableNodeShutdown is false")
 	}
 
-	cfgEnabled := &config.Config{AllowMutations: true}
-	if err := tools.EnsureMutationsAllowed(cfgEnabled); err != nil {
-		t.Fatalf("unexpected error when AllowMutations is true: %v", err)
+	cfgEnabled := &config.Config{
+		EnablePower:        true,
+		EnableConfig:       true,
+		EnableStorage:      true,
+		EnableNodeOps:      true,
+		EnableNodeShutdown: true,
+	}
+	if err := tools.EnsurePowerAllowed(cfgEnabled); err != nil {
+		t.Fatalf("unexpected error when EnablePower is true: %v", err)
+	}
+	if err := tools.EnsureConfigAllowed(cfgEnabled); err != nil {
+		t.Fatalf("unexpected error when EnableConfig is true: %v", err)
+	}
+	if err := tools.EnsureStorageAllowed(cfgEnabled); err != nil {
+		t.Fatalf("unexpected error when EnableStorage is true: %v", err)
+	}
+	if err := tools.EnsureNodeOpsAllowed(cfgEnabled); err != nil {
+		t.Fatalf("unexpected error when EnableNodeOps is true: %v", err)
+	}
+	if err := tools.EnsureNodeShutdownAllowed(cfgEnabled); err != nil {
+		t.Fatalf("unexpected error when EnableNodeShutdown is true: %v", err)
+	}
+}
+
+func TestValidateAllowedNode(t *testing.T) {
+	if err := tools.ValidateAllowedNode("pve1", nil); err != nil {
+		t.Fatalf("unexpected error when allowed list is empty: %v", err)
+	}
+	if err := tools.ValidateAllowedNode("pve1", []string{"pve1", "pve2"}); err != nil {
+		t.Fatalf("unexpected error when node is in allowed list: %v", err)
+	}
+	if err := tools.ValidateAllowedNode("pve3", []string{"pve1", "pve2"}); err == nil {
+		t.Fatal("expected error when node is not in allowed list")
+	}
+	if err := tools.ValidateAllowedNode("invalid node!", []string{"pve1"}); err == nil {
+		t.Fatal("expected error for invalid node syntax")
 	}
 }
 
@@ -388,14 +445,14 @@ func TestEnsureDestroyAllowed(t *testing.T) {
 		t.Fatal("expected error for nil config")
 	}
 
-	cfg := &config.Config{AllowDestroy: false}
+	cfg := &config.Config{EnableDestroy: false}
 	if err := tools.EnsureDestroyAllowed(cfg); err == nil {
-		t.Fatal("expected error when AllowDestroy is false")
+		t.Fatal("expected error when EnableDestroy is false")
 	}
 
-	cfg.AllowDestroy = true
+	cfg.EnableDestroy = true
 	if err := tools.EnsureDestroyAllowed(cfg); err != nil {
-		t.Fatalf("unexpected error when AllowDestroy is true: %v", err)
+		t.Fatalf("unexpected error when EnableDestroy is true: %v", err)
 	}
 }
 

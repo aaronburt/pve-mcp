@@ -15,24 +15,29 @@ import (
 )
 
 func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Config) {
-	s.AddTool(
-		mcp.NewTool(
-			"pve_qemu_power",
-			mcp.WithDescription("Control the power state of a QEMU virtual machine (start, stop, shutdown, reboot, suspend, resume)"),
-			mcp.WithReadOnlyHintAnnotation(false),
-			mcp.WithDestructiveHintAnnotation(true),
-			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
-			mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
-			mcp.WithString("expected_name", mcp.Description("Current name of the virtual machine; required when action is 'stop' to prevent accidental power-off")),
-			mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
-			mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
-			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
-				return ErrorResult(err.Error())
-			}
+	if cfg == nil {
+		return
+	}
+
+	if cfg.EnablePower {
+		s.AddTool(
+			mcp.NewTool(
+				"pve_qemu_power",
+				mcp.WithDescription("Control the power state of a QEMU virtual machine (start, stop, shutdown, reboot, suspend, resume)"),
+				mcp.WithReadOnlyHintAnnotation(false),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
+				mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
+				mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
+				mcp.WithString("expected_name", mcp.Description("Current name of the virtual machine; required when action is 'stop' to prevent accidental power-off")),
+				mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
+				mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
+				mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
+			),
+			func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				if err := EnsurePowerAllowed(cfg); err != nil {
+					return ErrorResult(err.Error())
+				}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -100,7 +105,9 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Power action %q dispatched successfully for VM %d on node %s. Task UPID: %s", action, vmid, node, taskUPID)), nil
 		},
 	)
+}
 
+if cfg.EnableConfig {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_qemu_update_hardware",
@@ -117,7 +124,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply hardware updates; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureConfigAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -189,7 +196,9 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Hardware successfully updated for VM %d on node %s.\nApplied modifications:\n  - %s", vmid, node, strings.Join(diffs, "\n  - "))), nil
 		},
 	)
+}
 
+if cfg.EnableStorage {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_qemu_resize_disk",
@@ -203,7 +212,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute disk resize; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureStorageAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -275,7 +284,9 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Disk %s on VM %d successfully resized (%s). Task UPID: %s", disk, vmid, size, taskUPID)), nil
 		},
 	)
+}
 
+if cfg.EnableConfig {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_qemu_update_network",
@@ -293,7 +304,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply network changes; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureConfigAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -396,7 +407,9 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Network interface %s updated on VM %d:\n%s", netID, vmid, mergedNet)), nil
 		},
 	)
+}
 
+if cfg.EnableStorage {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_qemu_clone",
@@ -414,7 +427,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the clone; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureStorageAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -516,7 +529,9 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Clone task is still running after 30s. Task UPID: %s\nUse pve_task_status to check status.", upid)), nil
 		},
 	)
+}
 
+if cfg.EnableDestroy {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_qemu_destroy",
@@ -524,7 +539,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID to permanently delete")),
+			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
 			mcp.WithString("expected_name", mcp.Required(), mcp.Description("Current name of the virtual machine to confirm identity before destruction")),
 			mcp.WithBoolean("purge", mcp.Description("Remove VM from backup jobs and purge disk configurations (default true)")),
 			mcp.WithBoolean("destroy_disks", mcp.Description("Remove and erase all associated virtual disks (default true)")),
@@ -532,9 +547,6 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute deletion; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
-				return ErrorResult(err.Error())
-			}
 			if err := EnsureDestroyAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
@@ -632,7 +644,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute protection change; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureDestroyAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 
@@ -695,4 +707,5 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 			return mcp.NewToolResultText(fmt.Sprintf("Protection successfully set to %s for VM %d on node %s.", targetProtection, vmid, node)), nil
 		},
 	)
+}
 }

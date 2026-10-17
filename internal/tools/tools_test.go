@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,8 +56,26 @@ func TestTools_RegisterAndExecuteAll(t *testing.T) {
 	}
 
 	allTools := mcpServer.ListTools()
-	if len(allTools) != 16 {
-		t.Fatalf("expected exactly 16 registered tools, got %d", len(allTools))
+	if len(allTools) != 1 {
+		t.Fatalf("expected exactly 1 registered tool in default mode, got %d", len(allTools))
+	}
+
+	cfgAll := &config.Config{
+		Host:               mockPVE.URL,
+		TokenID:            "user@pve!token",
+		TokenSecret:        "secret",
+		EnablePower:        true,
+		EnableConfig:       true,
+		EnableStorage:      true,
+		EnableDestroy:      true,
+		EnableNodeOps:      true,
+		EnableNodeShutdown: true,
+	}
+	clientAll, _ := pve.NewClient(cfgAll)
+	mcpServerAll := server.NewMCPServer("pve-mcp-all", "1.0.0")
+	tools.RegisterAll(mcpServerAll, clientAll, cfgAll)
+	if len(mcpServerAll.ListTools()) != 18 {
+		t.Fatalf("expected 18 registered tools when all categories enabled, got %d", len(mcpServerAll.ListTools()))
 	}
 
 	ctx := context.Background()
@@ -183,10 +202,9 @@ func TestMutatingTools_GuardrailsAndExecution(t *testing.T) {
 	ctx := context.Background()
 
 	cfgDisabled := &config.Config{
-		Host:           mockPVE.URL,
-		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: false,
+		Host:        mockPVE.URL,
+		TokenID:     "user@pve!token",
+		TokenSecret: "secret",
 	}
 	clientDisabled, _ := pve.NewClient(cfgDisabled)
 	serverDisabled := server.NewMCPServer("pve-mcp", "1.0.0")
@@ -198,38 +216,41 @@ func TestMutatingTools_GuardrailsAndExecution(t *testing.T) {
 		"pve_qemu_clone", "pve_qemu_destroy",
 		"pve_lxc_clone", "pve_lxc_create", "pve_lxc_destroy",
 		"pve_qemu_protection", "pve_lxc_protection",
+		"pve_node_reboot", "pve_node_shutdown",
 	}
 
 	for _, name := range mutatingToolNames {
 		st := serverDisabled.GetTool(name)
-		if st == nil {
-			t.Fatalf("mutating tool %s not registered", name)
-		}
-		res, err := st.Handler(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Name:      name,
-				Arguments: map[string]any{"node": "pve", "vmid": 100},
-			},
-		})
-		if err != nil || res == nil || !res.IsError {
-			t.Fatalf("expected mutation guardrail error for %s, got %+v", name, res)
-		}
-		tc, _ := mcp.AsTextContent(res.Content[0])
-		if !strings.Contains(tc.Text, "mutations are disabled") {
-			t.Fatalf("expected 'mutations are disabled' message, got: %s", tc.Text)
+		if st != nil {
+			t.Fatalf("tool %s should not be registered when category is disabled", name)
 		}
 	}
 
+	if serverDisabled.GetTool("pve_task_status") == nil {
+		t.Fatal("pve_task_status should always be registered")
+	}
+
 	cfgEnabled := &config.Config{
-		Host:           mockPVE.URL,
-		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:               mockPVE.URL,
+		TokenID:            "user@pve!token",
+		TokenSecret:        "secret",
+		EnablePower:        true,
+		EnableConfig:       true,
+		EnableStorage:      true,
+		EnableDestroy:      true,
+		EnableNodeOps:      true,
+		EnableNodeShutdown: true,
 	}
 	clientEnabled, _ := pve.NewClient(cfgEnabled)
 	serverEnabled := server.NewMCPServer("pve-mcp", "1.0.0")
 	tools.RegisterAll(serverEnabled, clientEnabled, cfgEnabled)
+
+	for _, name := range mutatingToolNames {
+		st := serverEnabled.GetTool(name)
+		if st == nil {
+			t.Fatalf("tool %s should be registered when category is enabled", name)
+		}
+	}
 
 	t.Run("qemu_power_dry_run_and_confirm", func(t *testing.T) {
 		st := serverEnabled.GetTool("pve_qemu_power")
@@ -410,37 +431,28 @@ func TestMutatingTools_GuardrailsAndExecution(t *testing.T) {
 	cfgNoDestroy := &config.Config{
 		Host:           mockPVE.URL,
 		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   false,
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: false,
 	}
 	clientNoDestroy, _ := pve.NewClient(cfgNoDestroy)
 	serverNoDestroy := server.NewMCPServer("pve-mcp", "1.0.0")
 	tools.RegisterAll(serverNoDestroy, clientNoDestroy, cfgNoDestroy)
 
 	t.Run("destroy_disabled_safety_check", func(t *testing.T) {
-		qemuDestroy := serverNoDestroy.GetTool("pve_qemu_destroy")
-		resQ, err := qemuDestroy.Handler(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Arguments: map[string]any{"node": "pve", "vmid": 101, "confirm": true},
-			},
-		})
-		if err != nil || resQ == nil || !resQ.IsError {
-			t.Fatalf("expected error when PVE_ALLOW_DESTROY=false, got: %+v", resQ)
+		if serverNoDestroy.GetTool("pve_qemu_destroy") != nil {
+			t.Fatal("pve_qemu_destroy should not be registered when EnableDestroy is false")
 		}
-		tcQ, _ := mcp.AsTextContent(resQ.Content[0])
-		if !strings.Contains(tcQ.Text, "machine destruction is disabled") {
-			t.Fatalf("expected destroy disabled message, got: %s", tcQ.Text)
+		if serverNoDestroy.GetTool("pve_lxc_destroy") != nil {
+			t.Fatal("pve_lxc_destroy should not be registered when EnableDestroy is false")
 		}
-
-		lxcDestroy := serverNoDestroy.GetTool("pve_lxc_destroy")
-		resL, err := lxcDestroy.Handler(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Arguments: map[string]any{"node": "pve", "vmid": 200, "confirm": true},
-			},
-		})
-		if err != nil || resL == nil || !resL.IsError {
-			t.Fatalf("expected error when PVE_ALLOW_DESTROY=false for lxc, got: %+v", resL)
+		if serverNoDestroy.GetTool("pve_qemu_protection") != nil {
+			t.Fatal("pve_qemu_protection should not be registered when EnableDestroy is false")
+		}
+		if serverNoDestroy.GetTool("pve_lxc_protection") != nil {
+			t.Fatal("pve_lxc_protection should not be registered when EnableDestroy is false")
 		}
 	})
 
@@ -616,11 +628,13 @@ func TestMutatingTools_ValidationAndEdgeCases(t *testing.T) {
 	defer mockPVE.Close()
 
 	cfg := &config.Config{
-		Host:           mockPVE.URL,
-		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:          mockPVE.URL,
+		TokenID:       "user@pve!token",
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: true,
 	}
 	client, _ := pve.NewClient(cfg)
 	mcpServer := server.NewMCPServer("pve-mcp", "1.0.0")
@@ -651,24 +665,20 @@ func TestMutatingTools_ValidationAndEdgeCases(t *testing.T) {
 
 	t.Run("destroy disallowed config", func(t *testing.T) {
 		noDestroyCfg := &config.Config{
-			Host:           mockPVE.URL,
-			TokenID:        "user@pve!token",
-			TokenSecret:    "secret",
-			AllowMutations: true,
-			AllowDestroy:   false,
+			Host:          mockPVE.URL,
+			TokenID:       "user@pve!token",
+			TokenSecret:   "secret",
+			EnablePower:   true,
+			EnableConfig:  true,
+			EnableStorage: true,
+			EnableDestroy: false,
 		}
 		noDestroyClient, _ := pve.NewClient(noDestroyCfg)
 		noDestroyServer := server.NewMCPServer("pve-mcp", "1.0.0")
 		tools.RegisterAll(noDestroyServer, noDestroyClient, noDestroyCfg)
 
-		st := noDestroyServer.GetTool("pve_qemu_destroy")
-		res, _ := st.Handler(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Arguments: map[string]any{"node": "pve", "vmid": 100, "confirm": true},
-			},
-		})
-		if !res.IsError || !strings.Contains(res.Content[0].(mcp.TextContent).Text, "machine destruction is disabled") {
-			t.Fatalf("expected destroy disabled error, got: %+v", res)
+		if noDestroyServer.GetTool("pve_qemu_destroy") != nil {
+			t.Fatal("expected pve_qemu_destroy not to be registered when EnableDestroy is false")
 		}
 	})
 
@@ -764,11 +774,13 @@ func TestMutatingTools_ValidationParamPermutationsAndFailures(t *testing.T) {
 	defer failServer.Close()
 
 	cfg := &config.Config{
-		Host:           failServer.URL,
-		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:          failServer.URL,
+		TokenID:       "user@pve!token",
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: true,
 	}
 	client, _ := pve.NewClient(cfg)
 	mcpServer := server.NewMCPServer("pve-mcp", "1.0.0")
@@ -893,11 +905,13 @@ func TestMutatingTools_FullOptionCoverage(t *testing.T) {
 	defer mockPVE.Close()
 
 	cfg := &config.Config{
-		Host:           mockPVE.URL,
-		TokenID:        "user@pve!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:          mockPVE.URL,
+		TokenID:       "user@pve!token",
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: true,
 	}
 	client, _ := pve.NewClient(cfg)
 	mcpServer := server.NewMCPServer("pve-mcp", "1.0.0")
@@ -1228,11 +1242,13 @@ func TestMutatingTools_ExhaustiveBranchCoverage(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := &config.Config{
-		Host:           mockPVE.URL,
-		TokenID:        "root@pam!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:          mockPVE.URL,
+		TokenID:       "root@pam!token",
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: true,
 	}
 	client, _ := pve.NewClient(cfg)
 	mcpServer := server.NewMCPServer("pve-mcp", "1.0.0")
@@ -1243,11 +1259,13 @@ func TestMutatingTools_ExhaustiveBranchCoverage(t *testing.T) {
 	}))
 	defer mockErrServer.Close()
 	cfgErr := &config.Config{
-		Host:           mockErrServer.URL,
-		TokenID:        "root@pam!token",
-		TokenSecret:    "secret",
-		AllowMutations: true,
-		AllowDestroy:   true,
+		Host:          mockErrServer.URL,
+		TokenID:       "root@pam!token",
+		TokenSecret:   "secret",
+		EnablePower:   true,
+		EnableConfig:  true,
+		EnableStorage: true,
+		EnableDestroy: true,
 	}
 	clientErr, _ := pve.NewClient(cfgErr)
 	mcpServerErr := server.NewMCPServer("pve-mcp-err", "1.0.0")
@@ -1443,3 +1461,139 @@ func TestMutatingTools_ExhaustiveBranchCoverage(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeTools_RebootAndShutdown(t *testing.T) {
+	mockPVE := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api2/json/nodes/pve1/qemu":
+			w.Write([]byte(`{"data":[{"vmid":100,"name":"vm100","status":"running"},{"vmid":101,"name":"vm101","status":"stopped"}]}`))
+		case "/api2/json/nodes/pve1/lxc":
+			w.Write([]byte(`{"data":[{"vmid":200,"name":"ct200","status":"running"}]}`))
+		case "/api2/json/nodes/pve1/status":
+			_ = r.ParseForm()
+			cmd := r.Form.Get("command")
+			w.Write([]byte(fmt.Sprintf(`{"data":"UPID:pve1:1234:%s:ok"}`, cmd)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockPVE.Close()
+
+	ctx := context.Background()
+
+	t.Run("registration_permutations", func(t *testing.T) {
+		cfgOpsOnly := &config.Config{
+			Host:               mockPVE.URL,
+			TokenID:            "user@pve!token",
+			TokenSecret:        "secret",
+			EnableNodeOps:      true,
+			EnableNodeShutdown: false,
+		}
+		cOpsOnly, _ := pve.NewClient(cfgOpsOnly)
+		sOpsOnly := server.NewMCPServer("pve-mcp", "1.0.0")
+		tools.RegisterAll(sOpsOnly, cOpsOnly, cfgOpsOnly)
+
+		if sOpsOnly.GetTool("pve_node_reboot") == nil {
+			t.Fatal("expected pve_node_reboot to be registered")
+		}
+		if sOpsOnly.GetTool("pve_node_shutdown") != nil {
+			t.Fatal("expected pve_node_shutdown not to be registered when EnableNodeShutdown is false")
+		}
+	})
+
+	cfgFull := &config.Config{
+		Host:               mockPVE.URL,
+		TokenID:            "user@pve!token",
+		TokenSecret:        "secret",
+		EnableNodeOps:      true,
+		EnableNodeShutdown: true,
+		AllowedNodes:       []string{"pve1"},
+	}
+	clientFull, _ := pve.NewClient(cfgFull)
+	serverFull := server.NewMCPServer("pve-mcp", "1.0.0")
+	tools.RegisterAll(serverFull, clientFull, cfgFull)
+
+	t.Run("node_reboot_dry_run_and_confirm", func(t *testing.T) {
+		tool := serverFull.GetTool("pve_node_reboot")
+		if tool == nil {
+			t.Fatal("expected pve_node_reboot to be registered")
+		}
+
+		resPreview, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"node": "pve1", "confirm": false},
+			},
+		})
+		if err != nil || resPreview.IsError {
+			t.Fatalf("unexpected error in reboot dry run: %v, res: %+v", err, resPreview)
+		}
+		tc, _ := mcp.AsTextContent(resPreview.Content[0])
+		if !strings.Contains(tc.Text, "dry_run") || !strings.Contains(tc.Text, "running_vms") {
+			t.Fatalf("expected dry-run preview json, got: %s", tc.Text)
+		}
+
+		resExec, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"node": "pve1", "confirm": true},
+			},
+		})
+		if err != nil || resExec.IsError {
+			t.Fatalf("unexpected error in reboot exec: %v, res: %+v", err, resExec)
+		}
+		tcExec, _ := mcp.AsTextContent(resExec.Content[0])
+		if !strings.Contains(tcExec.Text, "initiated") || !strings.Contains(tcExec.Text, "reboot") {
+			t.Fatalf("expected initiated reboot json, got: %s", tcExec.Text)
+		}
+	})
+
+	t.Run("node_shutdown_dry_run_and_confirm", func(t *testing.T) {
+		tool := serverFull.GetTool("pve_node_shutdown")
+		if tool == nil {
+			t.Fatal("expected pve_node_shutdown to be registered")
+		}
+
+		resPreview, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"node": "pve1", "confirm": false},
+			},
+		})
+		if err != nil || resPreview.IsError {
+			t.Fatalf("unexpected error in shutdown dry run: %v, res: %+v", err, resPreview)
+		}
+		tc, _ := mcp.AsTextContent(resPreview.Content[0])
+		if !strings.Contains(tc.Text, "CRITICAL: Node will power off completely") {
+			t.Fatalf("expected critical warning in shutdown dry run, got: %s", tc.Text)
+		}
+
+		resExec, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"node": "pve1", "confirm": true},
+			},
+		})
+		if err != nil || resExec.IsError {
+			t.Fatalf("unexpected error in shutdown exec: %v, res: %+v", err, resExec)
+		}
+		tcExec, _ := mcp.AsTextContent(resExec.Content[0])
+		if !strings.Contains(tcExec.Text, "initiated") || !strings.Contains(tcExec.Text, "shutdown") {
+			t.Fatalf("expected initiated shutdown json, got: %s", tcExec.Text)
+		}
+	})
+
+	t.Run("allowed_nodes_validation", func(t *testing.T) {
+		tool := serverFull.GetTool("pve_node_reboot")
+		res, err := tool.Handler(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Arguments: map[string]any{"node": "pve2", "confirm": true},
+			},
+		})
+		if err != nil || !res.IsError {
+			t.Fatalf("expected error for non-whitelisted node, got: %+v", res)
+		}
+		tc, _ := mcp.AsTextContent(res.Content[0])
+		if !strings.Contains(tc.Text, "not in the allowed nodes list") {
+			t.Fatalf("expected allowed nodes list error, got: %s", tc.Text)
+		}
+	})
+}
+

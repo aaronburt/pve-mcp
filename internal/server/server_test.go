@@ -414,12 +414,29 @@ func TestCreateMCPServer(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	mcpServer := server.CreateMCPServer(cfg, client)
-	if len(mcpServer.ListTools()) != 16 {
-		t.Fatalf("expected 16 tools, got %d", len(mcpServer.ListTools()))
+	mcpServerDefault := server.CreateMCPServer(cfg, client)
+	if len(mcpServerDefault.ListTools()) != 1 {
+		t.Fatalf("expected 1 tool in default fail-closed mode, got %d", len(mcpServerDefault.ListTools()))
 	}
-	if len(mcpServer.ListPrompts()) != 5 {
-		t.Fatalf("expected 5 prompts, got %d", len(mcpServer.ListPrompts()))
+	if len(mcpServerDefault.ListPrompts()) != 5 {
+		t.Fatalf("expected 5 prompts, got %d", len(mcpServerDefault.ListPrompts()))
+	}
+
+	cfgAll := &config.Config{
+		Host:               "https://127.0.0.1:8006",
+		TokenID:            "user@pve!token",
+		TokenSecret:        "secret",
+		VerifySSL:          false,
+		EnablePower:        true,
+		EnableConfig:       true,
+		EnableStorage:      true,
+		EnableDestroy:      true,
+		EnableNodeOps:      true,
+		EnableNodeShutdown: true,
+	}
+	mcpServerAll := server.CreateMCPServer(cfgAll, client)
+	if len(mcpServerAll.ListTools()) != 18 {
+		t.Fatalf("expected 18 tools with all categories enabled, got %d", len(mcpServerAll.ListTools()))
 	}
 }
 

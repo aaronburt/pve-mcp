@@ -15,24 +15,29 @@ import (
 )
 
 func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Config) {
-	s.AddTool(
-		mcp.NewTool(
-			"pve_lxc_power",
-			mcp.WithDescription("Control the power state of an LXC container (start, stop, shutdown, reboot, suspend, resume)"),
-			mcp.WithReadOnlyHintAnnotation(false),
-			mcp.WithDestructiveHintAnnotation(true),
-			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
-			mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
-			mcp.WithString("expected_name", mcp.Description("Current hostname of the container; required when action is 'stop' to prevent accidental power-off")),
-			mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
-			mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
-			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
-				return ErrorResult(err.Error())
-			}
+	if cfg == nil {
+		return
+	}
+
+	if cfg.EnablePower {
+		s.AddTool(
+			mcp.NewTool(
+				"pve_lxc_power",
+				mcp.WithDescription("Control the power state of an LXC container (start, stop, shutdown, reboot, suspend, resume)"),
+				mcp.WithReadOnlyHintAnnotation(false),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
+				mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
+				mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
+				mcp.WithString("expected_name", mcp.Description("Current hostname of the container; required when action is 'stop' to prevent accidental power-off")),
+				mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
+				mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
+				mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
+			),
+			func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				if err := EnsurePowerAllowed(cfg); err != nil {
+					return ErrorResult(err.Error())
+				}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -100,7 +105,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Power action %q dispatched successfully for LXC %d on node %s. Task UPID: %s", action, vmid, node, taskUPID)), nil
 		},
 	)
+}
 
+if cfg.EnableConfig {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_lxc_update_hardware",
@@ -115,7 +122,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply hardware updates; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureConfigAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -179,7 +186,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Hardware successfully updated for LXC %d on node %s.\nApplied modifications:\n  - %s", vmid, node, strings.Join(diffs, "\n  - "))), nil
 		},
 	)
+}
 
+if cfg.EnableStorage {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_lxc_resize_disk",
@@ -193,7 +202,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute disk resize; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureStorageAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -265,7 +274,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Disk %s on LXC %d successfully resized (%s). Task UPID: %s", disk, vmid, size, taskUPID)), nil
 		},
 	)
+}
 
+if cfg.EnableConfig {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_lxc_update_network",
@@ -285,7 +296,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply network changes; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureConfigAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -389,7 +400,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Network interface %s updated on LXC %d:\n%s", netID, vmid, mergedNet)), nil
 		},
 	)
+}
 
+if cfg.EnableStorage {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_lxc_clone",
@@ -406,7 +419,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the clone; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureStorageAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -528,7 +541,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute creation; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureStorageAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawNode, err := ParseRequiredString(req.Params.Arguments, "node")
@@ -641,7 +654,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Create task is still running after 30s. Task UPID: %s\nUse pve_task_status to check status.", upid)), nil
 		},
 	)
+}
 
+if cfg.EnableDestroy {
 	s.AddTool(
 		mcp.NewTool(
 			"pve_lxc_destroy",
@@ -649,7 +664,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
-			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID to permanently delete")),
+			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
 			mcp.WithString("expected_name", mcp.Required(), mcp.Description("Current name or hostname of the container to confirm identity before destruction")),
 			mcp.WithBoolean("purge", mcp.Description("Remove container from backup jobs and purge disk configurations (default true)")),
 			mcp.WithBoolean("destroy_disks", mcp.Description("Remove and erase all associated mountpoints and disks (default true)")),
@@ -657,9 +672,6 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute deletion; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
-				return ErrorResult(err.Error())
-			}
 			if err := EnsureDestroyAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
@@ -757,7 +769,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute protection change; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if err := EnsureMutationsAllowed(cfg); err != nil {
+			if err := EnsureDestroyAllowed(cfg); err != nil {
 				return ErrorResult(err.Error())
 			}
 
@@ -820,4 +832,5 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			return mcp.NewToolResultText(fmt.Sprintf("Protection successfully set to %s for LXC %d on node %s.", targetProtection, vmid, node)), nil
 		},
 	)
+}
 }

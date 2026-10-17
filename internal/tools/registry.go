@@ -10,4 +10,5 @@ func RegisterAll(s *server.MCPServer, client *pve.Client, cfg *config.Config) {
 	RegisterClusterTools(s, client)
 	RegisterQEMUTools(s, client, cfg)
 	RegisterLXCTools(s, client, cfg)
+	RegisterNodeTools(s, client, cfg)
 }

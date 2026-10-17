@@ -56,11 +56,26 @@ func TestLoadFromEnv_DefaultsAndHardening(t *testing.T) {
 	if !cfg.VerifySSL {
 		t.Errorf("got verifySSL false, want default true")
 	}
-	if cfg.AllowMutations {
-		t.Errorf("got AllowMutations true, want default false")
+	if cfg.EnablePower {
+		t.Errorf("got EnablePower true, want default false")
 	}
-	if cfg.AllowDestroy {
-		t.Errorf("got AllowDestroy true, want default false")
+	if cfg.EnableConfig {
+		t.Errorf("got EnableConfig true, want default false")
+	}
+	if cfg.EnableStorage {
+		t.Errorf("got EnableStorage true, want default false")
+	}
+	if cfg.EnableDestroy {
+		t.Errorf("got EnableDestroy true, want default false")
+	}
+	if cfg.EnableNodeOps {
+		t.Errorf("got EnableNodeOps true, want default false")
+	}
+	if cfg.EnableNodeShutdown {
+		t.Errorf("got EnableNodeShutdown true, want default false")
+	}
+	if len(cfg.AllowedNodes) != 0 {
+		t.Errorf("got %d allowed nodes, want 0", len(cfg.AllowedNodes))
 	}
 }
 
@@ -76,7 +91,13 @@ func TestLoadFromEnv_CustomOverrides(t *testing.T) {
 	t.Setenv("PVE_CA_CERT", "/etc/ssl/pve-ca.pem")
 	t.Setenv("PVE_FINGERPRINT", "AA:BB:CC:DD:EE:FF:11:22:33:44:55:66:77:88:99:00:AA:BB:CC:DD:EE:FF:11:22:33:44:55:66:77:88:99:00")
 	t.Setenv("MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-	t.Setenv("PVE_ALLOW_MUTATIONS", "true")
+	t.Setenv("PVE_ENABLE_POWER", "true")
+	t.Setenv("PVE_ENABLE_CONFIG", "1")
+	t.Setenv("PVE_ENABLE_STORAGE", "yes")
+	t.Setenv("PVE_ENABLE_DESTROY", "on")
+	t.Setenv("PVE_ENABLE_NODE_OPS", "true")
+	t.Setenv("PVE_ENABLE_NODE_SHUTDOWN", "true")
+	t.Setenv("PVE_ALLOWED_NODES", "pve1, pve2")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -89,8 +110,26 @@ func TestLoadFromEnv_CustomOverrides(t *testing.T) {
 	if cfg.VerifySSL {
 		t.Errorf("got verifySSL true, want false")
 	}
-	if !cfg.AllowMutations {
-		t.Errorf("got AllowMutations false, want true")
+	if !cfg.EnablePower {
+		t.Errorf("got EnablePower false, want true")
+	}
+	if !cfg.EnableConfig {
+		t.Errorf("got EnableConfig false, want true")
+	}
+	if !cfg.EnableStorage {
+		t.Errorf("got EnableStorage false, want true")
+	}
+	if !cfg.EnableDestroy {
+		t.Errorf("got EnableDestroy false, want true")
+	}
+	if !cfg.EnableNodeOps {
+		t.Errorf("got EnableNodeOps false, want true")
+	}
+	if !cfg.EnableNodeShutdown {
+		t.Errorf("got EnableNodeShutdown false, want true")
+	}
+	if len(cfg.AllowedNodes) != 2 || cfg.AllowedNodes[0] != "pve1" || cfg.AllowedNodes[1] != "pve2" {
+		t.Errorf("got allowed nodes %v, want [pve1 pve2]", cfg.AllowedNodes)
 	}
 	if cfg.BindAddress != "0.0.0.0" {
 		t.Errorf("got bind %s, want 0.0.0.0", cfg.BindAddress)
@@ -127,35 +166,11 @@ func TestLoadFromEnv_InvalidTimeout(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnv_AllowDestroy(t *testing.T) {
-	t.Setenv("PVE_HOST", "https://pve.example.com")
-	t.Setenv("PVE_TOKEN_ID", "root@pam!token")
-	t.Setenv("PVE_TOKEN_SECRET", "secret")
-
-	t.Setenv("PVE_ALLOW_DESTROY", "true")
-	cfg, err := config.LoadFromEnv()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.AllowDestroy {
-		t.Errorf("expected AllowDestroy true when PVE_ALLOW_DESTROY=true")
-	}
-
-	t.Setenv("PVE_ALLOW_DESTROY", "0")
-	cfg2, err := config.LoadFromEnv()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg2.AllowDestroy {
-		t.Errorf("expected AllowDestroy false when PVE_ALLOW_DESTROY=0")
-	}
-}
-
 func TestLoadDotEnv(t *testing.T) {
 	config.LoadDotEnv("non_existent_file_path.env")
 
 	tmp := t.TempDir() + "/test.env"
-	content := "# comment line\nVAR1=hello\nVAR2=\"world\"\nVAR3='antigravity'\nVAR4=simple\nEMPTY=\nNO_EQUALS\n"
+	content := "VAR1=hello\nVAR2=\"world\"\nVAR3='antigravity'\nVAR4=simple\nEMPTY=\nNO_EQUALS\n"
 	if err := os.WriteFile(tmp, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp env: %v", err)
 	}

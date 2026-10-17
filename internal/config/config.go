@@ -10,20 +10,33 @@ import (
 )
 
 type Config struct {
-	Host           string
-	TokenID        string
-	TokenSecret    string
-	VerifySSL      bool
-	CACertPath     string
-	Fingerprint    string
-	BindAddress    string
-	Port           string
-	MCPAuthToken   string
-	AllowedOrigins []string
-	Timeout        time.Duration
-	LogLevel       string
-	AllowMutations bool
-	AllowDestroy   bool
+	Host               string
+	TokenID            string
+	TokenSecret        string
+	VerifySSL          bool
+	CACertPath         string
+	Fingerprint        string
+	BindAddress        string
+	Port               string
+	MCPAuthToken       string
+	AllowedOrigins     []string
+	Timeout            time.Duration
+	LogLevel           string
+	EnablePower        bool
+	EnableConfig       bool
+	EnableStorage      bool
+	EnableDestroy      bool
+	EnableNodeOps      bool
+	EnableNodeShutdown bool
+	AllowedNodes       []string
+}
+
+func parseBoolEnv(key string) bool {
+	if val, ok := os.LookupEnv(key); ok {
+		lowerVal := strings.ToLower(strings.TrimSpace(val))
+		return lowerVal == "true" || lowerVal == "1" || lowerVal == "yes" || lowerVal == "on"
+	}
+	return false
 }
 
 func LoadDotEnv(path string) {
@@ -124,36 +137,42 @@ func LoadFromEnv() (*Config, error) {
 	fingerprint = strings.ReplaceAll(fingerprint, ":", "")
 	fingerprint = strings.ReplaceAll(fingerprint, " ", "")
 
-	allowMutations := false
-	if val, ok := os.LookupEnv("PVE_ALLOW_MUTATIONS"); ok {
-		lowerVal := strings.ToLower(strings.TrimSpace(val))
-		if lowerVal == "true" || lowerVal == "1" || lowerVal == "yes" || lowerVal == "on" {
-			allowMutations = true
-		}
-	}
+	enablePower := parseBoolEnv("PVE_ENABLE_POWER")
+	enableConfig := parseBoolEnv("PVE_ENABLE_CONFIG")
+	enableStorage := parseBoolEnv("PVE_ENABLE_STORAGE")
+	enableDestroy := parseBoolEnv("PVE_ENABLE_DESTROY")
+	enableNodeOps := parseBoolEnv("PVE_ENABLE_NODE_OPS")
+	enableNodeShutdown := parseBoolEnv("PVE_ENABLE_NODE_SHUTDOWN")
 
-	allowDestroy := false
-	if val, ok := os.LookupEnv("PVE_ALLOW_DESTROY"); ok {
-		lowerVal := strings.ToLower(strings.TrimSpace(val))
-		if lowerVal == "true" || lowerVal == "1" || lowerVal == "yes" || lowerVal == "on" {
-			allowDestroy = true
+	var allowedNodes []string
+	if nodesStr := strings.TrimSpace(os.Getenv("PVE_ALLOWED_NODES")); nodesStr != "" {
+		for _, n := range strings.Split(nodesStr, ",") {
+			trimmed := strings.TrimSpace(n)
+			if trimmed != "" {
+				allowedNodes = append(allowedNodes, trimmed)
+			}
 		}
 	}
 
 	return &Config{
-		Host:           cleanHost,
-		TokenID:        tokenID,
-		TokenSecret:    tokenSecret,
-		VerifySSL:      verifySSL,
-		CACertPath:     caCertPath,
-		Fingerprint:    fingerprint,
-		BindAddress:    bindAddress,
-		Port:           port,
-		MCPAuthToken:   mcpAuthToken,
-		AllowedOrigins: allowedOrigins,
-		Timeout:        timeout,
-		LogLevel:       logLevel,
-		AllowMutations: allowMutations,
-		AllowDestroy:   allowDestroy,
+		Host:               cleanHost,
+		TokenID:            tokenID,
+		TokenSecret:        tokenSecret,
+		VerifySSL:          verifySSL,
+		CACertPath:         caCertPath,
+		Fingerprint:        fingerprint,
+		BindAddress:        bindAddress,
+		Port:               port,
+		MCPAuthToken:       mcpAuthToken,
+		AllowedOrigins:     allowedOrigins,
+		Timeout:            timeout,
+		LogLevel:           logLevel,
+		EnablePower:        enablePower,
+		EnableConfig:       enableConfig,
+		EnableStorage:      enableStorage,
+		EnableDestroy:      enableDestroy,
+		EnableNodeOps:      enableNodeOps,
+		EnableNodeShutdown: enableNodeShutdown,
+		AllowedNodes:       allowedNodes,
 	}, nil
 }

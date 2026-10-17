@@ -80,28 +80,30 @@ All cluster state, telemetry, guest configurations, storage pools, and access co
 
 ---
 
-## 2. MCP Tools (16 Active Verbs)
+## 2. MCP Tools (18 Active Verbs)
 
-Tools are reserved exclusively for state mutations and task monitoring:
+Tools are reserved exclusively for state mutations, lifecycle actions, and task monitoring:
 
 | Category | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
-| **Tasks** | `pve_task_status` | `node`, `upid` | Query Proxmox task exit status by UPID. |
-| **QEMU** | `pve_qemu_power` | `node`, `vmid`, `action`, `force`, `confirm` | Power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). Hard stop requires `force: true`. |
-| | `pve_qemu_update_hardware` | `node`, `vmid`, `cores`, `memory_mb`, `balloon_mb`, `name`, `description`, `onboot`, `confirm` | Hotplug/update CPU cores, RAM, ballooning, description, and onboot. |
-| | `pve_qemu_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand virtual disk capacity (disk shrinking is strictly rejected). |
-| | `pve_qemu_update_network` | `node`, `vmid`, `net_id`, `bridge`, `tag`, `firewall`, `rate`, `confirm` | Update or attach network interfaces with MAC address preservation. |
-| | `pve_qemu_clone` | `node`, `vmid`, `newid`, `name`, `full`, `storage`, `target`, `wait`, `confirm` | Full or linked VM cloning with progress notification support. |
-| | `pve_qemu_destroy` | `node`, `vmid`, `purge`, `destroy_unreferenced_disks`, `confirm` | Safely remove stopped VM. Requires `ALLOW_DESTROY=true` on server. |
-| | `pve_qemu_protection` | `node`, `vmid`, `enable` | Set or remove deletion protection flag. |
-| **LXC** | `pve_lxc_power` | `node`, `vmid`, `action`, `force`, `confirm` | Container power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). |
-| | `pve_lxc_update_hardware` | `node`, `vmid`, `cores`, `memory_mb`, `swap_mb`, `description`, `onboot`, `confirm` | Update container cores, RAM, swap, and description. |
-| | `pve_lxc_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand rootfs or mount point capacity. |
-| | `pve_lxc_update_network` | `node`, `vmid`, `net_id`, `bridge`, `tag`, `firewall`, `rate`, `confirm` | Update or attach container network interfaces. |
-| | `pve_lxc_clone` | `node`, `vmid`, `newid`, `hostname`, `full`, `storage`, `target`, `wait`, `confirm` | Clone container with progress notification support. |
-| | `pve_lxc_create` | `node`, `vmid`, `ostemplate`, `hostname`, `cores`, `memory`, `disk`, `storage`, `bridge`, `ip`, `unprivileged`, `password`, `start`, `wait`, `confirm` | Provision a brand new container from an OS template. |
-| | `pve_lxc_destroy` | `node`, `vmid`, `purge`, `destroy_unreferenced_disks`, `confirm` | Safely remove stopped container. Requires `ALLOW_DESTROY=true`. |
-| | `pve_lxc_protection` | `node`, `vmid`, `enable` | Set or remove deletion protection flag. |
+| **Tasks** | `pve_task_status` | `node`, `upid` | Query Proxmox task exit status by UPID. Always registered. |
+| **QEMU Power** | `pve_qemu_power` | `node`, `vmid`, `action`, `force`, `confirm` | Power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). Gated by `PVE_ENABLE_POWER`. |
+| **QEMU Config** | `pve_qemu_update_hardware` | `node`, `vmid`, `cores`, `memory`, `balloon`, `sockets`, `cpu`, `confirm` | Hotplug/update CPU cores, sockets, RAM, and ballooning. Gated by `PVE_ENABLE_CONFIG`. |
+| | `pve_qemu_update_network` | `node`, `vmid`, `net_id`, `bridge`, `tag`, `firewall`, `rate`, `model`, `confirm` | Update or attach network interfaces with MAC address preservation. Gated by `PVE_ENABLE_CONFIG`. |
+| **QEMU Storage** | `pve_qemu_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand virtual disk capacity (disk shrinking is strictly rejected). Gated by `PVE_ENABLE_STORAGE`. |
+| | `pve_qemu_clone` | `node`, `vmid`, `newid`, `name`, `full`, `storage`, `pool`, `wait`, `confirm` | Full or linked VM cloning with progress notification support. Gated by `PVE_ENABLE_STORAGE`. |
+| **QEMU Destroy** | `pve_qemu_destroy` | `node`, `vmid`, `expected_name`, `purge`, `destroy_disks`, `unprotect`, `confirm` | Safely remove stopped VM. Gated by `PVE_ENABLE_DESTROY`. |
+| | `pve_qemu_protection` | `node`, `vmid`, `protected`, `confirm` | Set or remove deletion protection flag. Gated by `PVE_ENABLE_DESTROY`. |
+| **LXC Power** | `pve_lxc_power` | `node`, `vmid`, `action`, `force`, `confirm` | Container power control (`start`, `stop`, `shutdown`, `reboot`, `suspend`, `resume`). Gated by `PVE_ENABLE_POWER`. |
+| **LXC Config** | `pve_lxc_update_hardware` | `node`, `vmid`, `cores`, `memory`, `swap`, `confirm` | Update container cores, RAM, and swap. Gated by `PVE_ENABLE_CONFIG`. |
+| | `pve_lxc_update_network` | `node`, `vmid`, `net_id`, `bridge`, `name`, `tag`, `firewall`, `rate`, `ip`, `gw`, `confirm` | Update or attach container network interfaces. Gated by `PVE_ENABLE_CONFIG`. |
+| **LXC Storage** | `pve_lxc_resize_disk` | `node`, `vmid`, `disk`, `size`, `confirm` | Expand rootfs or mount point capacity. Gated by `PVE_ENABLE_STORAGE`. |
+| | `pve_lxc_clone` | `node`, `vmid`, `newid`, `hostname`, `full`, `storage`, `wait`, `confirm` | Clone container with progress notification support. Gated by `PVE_ENABLE_STORAGE`. |
+| | `pve_lxc_create` | `node`, `vmid`, `ostemplate`, `hostname`, `cores`, `memory`, `disk`, `storage`, `bridge`, `ip`, `gateway`, `password`, `ssh_public_keys`, `unprivileged`, `start`, `wait`, `confirm` | Provision a brand new container from an OS template. Gated by `PVE_ENABLE_STORAGE`. |
+| **LXC Destroy** | `pve_lxc_destroy` | `node`, `vmid`, `expected_name`, `purge`, `destroy_disks`, `unprotect`, `confirm` | Safely remove stopped container. Gated by `PVE_ENABLE_DESTROY`. |
+| | `pve_lxc_protection` | `node`, `vmid`, `protected`, `confirm` | Set or remove deletion protection flag. Gated by `PVE_ENABLE_DESTROY`. |
+| **Node Ops** | `pve_node_reboot` | `node`, `confirm` | Reboot hypervisor node with dry-run active workload preview. Gated by `PVE_ENABLE_NODE_OPS`. |
+| | `pve_node_shutdown` | `node`, `confirm` | Shut down (cold power-off) hypervisor node with critical warning. Gated by `PVE_ENABLE_NODE_SHUTDOWN`. |
 
 ---
 
@@ -127,7 +129,12 @@ export PVE_HOST="https://pve.example.com:8006"
 export PVE_TOKEN_ID="auditor@pve!mcp"
 export PVE_TOKEN_SECRET="00000000-0000-0000-0000-000000000000"
 export PVE_VERIFY_SSL="false"  # if using self-signed certificates
-export PVE_ALLOW_MUTATIONS="true"  # if mutations are desired
+export PVE_ENABLE_POWER="true"
+export PVE_ENABLE_CONFIG="true"
+export PVE_ENABLE_STORAGE="true"
+export PVE_ENABLE_DESTROY="false"
+export PVE_ENABLE_NODE_OPS="true"
+export PVE_ENABLE_NODE_SHUTDOWN="false"
 export MCP_AUTH_TOKEN="your-secure-bearer-token"
 
 # Run HTTP/SSE Server
@@ -189,7 +196,9 @@ Or for Stdio transport:
         "PVE_TOKEN_ID": "root@pam!token",
         "PVE_TOKEN_SECRET": "00000000-0000-0000-0000-000000000000",
         "PVE_VERIFY_SSL": "false",
-        "PVE_ALLOW_MUTATIONS": "true"
+        "PVE_ENABLE_POWER": "true",
+        "PVE_ENABLE_CONFIG": "true",
+        "PVE_ENABLE_NODE_OPS": "true"
       }
     }
   }
@@ -200,10 +209,13 @@ Or for Stdio transport:
 
 ## Security & Architecture
 
-- **Two-Phase Confirmation**: Calling any mutating tool with `confirm=false` returns an explicit `[DRY RUN PREVIEW - USER CONFIRMATION REQUIRED]` with a before-and-after diff. Mutations only execute when `confirm: true` is passed.
-- **Environment Gating**:
-  - `PVE_ALLOW_MUTATIONS` defaults to `false`. Mutating tools reject execution immediately when disabled.
-  - `PVE_ALLOW_DESTROY` defaults to `false`. Deletion tools (`pve_qemu_destroy`, `pve_lxc_destroy`) are permanently disabled until explicitly enabled.
+- **Fail-Closed Category Gating**: All mutating tool categories default to `false`. Tools belonging to disabled categories are **not registered** on the MCP server at startup, keeping them invisible to LLMs.
+- **Two-Stage Defense**:
+  1. *Stage 1 (Server Level)*: Admin enables/disables entire tool categories via environment variables (`PVE_ENABLE_*`).
+  2. *Stage 2 (Client Level)*: Human operator approves individual tool calls interactively.
+- **Node Whitelisting**: Set `PVE_ALLOWED_NODES` to restrict host operations exclusively to specific worker nodes.
+- **Hard IAM Exclusion**: Permission modification (`Permissions.Modify`) is never exposed, preventing privilege escalation.
+- **Two-Phase Confirmation**: Calling mutating tools with `confirm=false` returns an explicit dry-run preview (with running VM/CT impact warnings for node reboot/shutdown).
 - **Protection & State Guards**: Machines must be stopped before destruction. Machines marked with `protection: 1` reject deletion requests.
 - **Disk Shrinking Prevention**: Validates target disk size strictly exceeds current capacity before dispatching to Proxmox.
 - **Progress Notifications**: Async operations support `notifications/progress` through client progress tokens.
@@ -218,8 +230,13 @@ Or for Stdio transport:
 | `PVE_HOST` | **Yes** | — | Proxmox VE host URL (e.g., `https://pve.example.com:8006`). |
 | `PVE_TOKEN_ID` | **Yes** | — | API Token ID (e.g., `auditor@pve!mcp`). |
 | `PVE_TOKEN_SECRET` | **Yes** | — | API Token Secret UUID. |
-| `PVE_ALLOW_MUTATIONS` | No | `false` | Set `true` to enable VM/LXC power, hardware, clone, create, and protection operations. |
-| `PVE_ALLOW_DESTROY` | No | `false` | Set `true` to explicitly allow permanent machine deletion (`pve_qemu_destroy`, `pve_lxc_destroy`). |
+| `PVE_ENABLE_POWER` | No | `false` | Enable VM and LXC power management (`pve_qemu_power`, `pve_lxc_power`). |
+| `PVE_ENABLE_CONFIG` | No | `false` | Enable VM and LXC hardware and network reconfiguration tools. |
+| `PVE_ENABLE_STORAGE` | No | `false` | Enable disk resizing, VM/CT cloning, and LXC container creation. |
+| `PVE_ENABLE_DESTROY` | No | `false` | Enable permanent deletion and protection toggling (`pve_*_destroy`, `pve_*_protection`). |
+| `PVE_ENABLE_NODE_OPS` | No | `false` | Enable hypervisor host node reboot (`pve_node_reboot`). |
+| `PVE_ENABLE_NODE_SHUTDOWN` | No | `false` | Enable hypervisor host node cold shutdown (`pve_node_shutdown`). |
+| `PVE_ALLOWED_NODES` | No | — | Optional comma-separated list of allowed nodes for host operations (e.g. `pve1,pve2`). |
 | `PVE_VERIFY_SSL` | No | `true` | Set `false` for self-signed certificates. |
 | `PVE_CA_CERT` | No | — | Path to custom CA PEM bundle. |
 | `PVE_FINGERPRINT` | No | — | SHA-256 fingerprint of PVE SSL cert. |
