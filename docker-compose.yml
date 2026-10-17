@@ -7,7 +7,7 @@ services:
     container_name: pve-mcp
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     env_file:
       - .env
     environment:
