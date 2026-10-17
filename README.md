@@ -170,6 +170,8 @@ Or using Docker Compose:
 docker compose up -d
 ```
 
+Compose publishes the MCP port on all interfaces and the Web UI port on loopback only. To enable the Web UI, add `MCP_UI_ENABLED=true` and `MCP_UI_TOKEN` to `.env`, run `docker compose up -d`, then open http://127.0.0.1:8081.
+
 To also run the Web UI in the container, set `MCP_UI_TOKEN` in `.env` and add the UI variables and port to the `docker run` command above:
 ```bash
   -e MCP_UI_ENABLED=true \
