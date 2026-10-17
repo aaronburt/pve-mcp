@@ -16,12 +16,35 @@ import (
 
 const Instructions = `Proxmox VE (PVE) Model Context Protocol Server.
 
-Guiding Principles:
-1. Resources are nouns: Read cluster state, node status, guest configurations, and metrics via MCP Resources (pve://...).
-2. Tools are verbs: Execute mutations and state changes via MCP Tools (pve_qemu_*, pve_lxc_*, pve_task_status).
-3. Two-phase confirmation: Destructive or state-changing operations require confirm=true. Without confirm=true, a dry-run preview is returned.
-4. Asynchronous Task Tracking: Async operations return a UPID. Track completion using pve_task_status or subscribe to progress notifications.
-5. High-level workflows: Use MCP Prompts for guided operational procedures (audits, triage, evacuations, provisioning, cleanup).`
+OPERATIONAL PRINCIPLES & SAFETY GUARDRAILS:
+
+1. Two-Phase Confirmation Protocol:
+   - All state-changing operations (power transitions, hardware/network changes, creation, cloning, reboot) require two-phase confirmation.
+   - ALWAYS invoke the tool first with "confirm": false (or omitted) to generate a dry-run impact preview.
+   - Present the structured preview to the human user and request explicit authorization.
+   - NEVER call a tool with "confirm": true without prior, explicit user approval.
+
+2. Target Discovery Before Action ("Read Before Write"):
+   - Inspect cluster and guest state via MCP Resources (pve://...) or task status before planning changes.
+   - Avoid guessing guest status, CPU/RAM allocations, or network bridges. Verify actual values first.
+
+3. Target Verification & Accidental Power-Off Protection:
+   - Always verify the VMID and node before invoking actions.
+   - When issuing power 'stop' or 'shutdown' actions on guests, provide "expected_name" matching the guest's actual hostname to prevent accidental VMID mismatch.
+
+4. Asynchronous Task Lifecycle:
+   - Proxmox mutations (start, stop, reboot, create, clone, resize) execute asynchronously and return a UPID (Unique Process ID).
+   - After dispatching an action, track completion by calling "pve_task_status" with the node and UPID until the exit status is returned.
+
+5. Node Routing & Security Tiering:
+   - Every operation requires a valid "node" argument (e.g. "pve"). Operations targeting unauthorized nodes will be rejected by policy.
+   - Tools are filtered at server boot by security category flags (Power, Config, Storage, Destroy, Node Ops).
+   - If a tool returns "tool not found" or Proxmox returns HTTP 403 Forbidden, that capability is omitted by the active security tier. Explain the restriction to the user rather than hallucinating workarounds.
+
+6. Creation & Resource Formats:
+   - Valid VMIDs range from 100 to 999999999.
+   - Template references use "storage:vztmpl/<archive>" format (e.g. "SSD:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz").
+   - Storage pools for rootfs/disks must be active and capable of storing images/rootdir (e.g. "local-lvm", "SSD").`
 
 type Server struct {
 	httpServer       *http.Server
