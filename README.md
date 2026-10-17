@@ -142,6 +142,10 @@ export MCP_AUTH_TOKEN="your-secure-bearer-token"
 
 # Or run in Stdio mode for local agent integration
 ./pve-mcp --stdio
+
+# Optional: read-only Web UI on http://127.0.0.1:8081 (needs its own token)
+export MCP_UI_TOKEN="$(openssl rand -hex 32)"
+./pve-mcp --ui
 ```
 
 ### 2. Docker & Docker Compose
@@ -165,6 +169,15 @@ Or using Docker Compose:
 ```bash
 docker compose up -d
 ```
+
+To also run the Web UI in the container, set `MCP_UI_TOKEN` in `.env` and add the UI variables and port to the `docker run` command above:
+```bash
+  -e MCP_UI_ENABLED=true \
+  -e MCP_UI_BIND_ADDRESS="0.0.0.0" \
+  -e MCP_UI_ALLOW_INSECURE_BIND="true" \
+  -p 127.0.0.1:8081:8081
+```
+The UI speaks plain HTTP inside the container, so keep its host port on loopback or a trusted network.
 
 ### 3. Client Setup
 
@@ -220,6 +233,7 @@ Or for Stdio transport:
 - **Protection & State Guards**: Machines must be stopped before destruction. Machines marked with `protection: 1` reject deletion requests.
 - **Disk Shrinking Prevention**: Validates target disk size strictly exceeds current capacity before dispatching to Proxmox.
 - **Progress Notifications**: Async operations support `notifications/progress` through client progress tokens.
+- **Opt-in Web UI**: Disabled by default. When enabled it binds to loopback, requires its own `MCP_UI_TOKEN` (separate from `MCP_AUTH_TOKEN` and the PVE token), rejects unexpected `Host` and `Origin` headers, requires a custom header on state-changing requests, and cannot change guards, allowed nodes or tokens. Non-loopback binds are refused unless `MCP_UI_ALLOW_INSECURE_BIND=true` is set.
 - **Transport Hardening**: TLS 1.2+ minimum, custom CA bundles (`PVE_CA_CERT`), SHA-256 fingerprint pinning (`PVE_FINGERPRINT`), and constant-time bearer authentication.
 
 ---
