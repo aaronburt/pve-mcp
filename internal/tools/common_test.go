@@ -720,8 +720,15 @@ func TestVerifyTargetDigest(t *testing.T) {
 		t.Fatal("expected error when expected_digest is blank")
 	}
 
-	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": "wrongsha"}, "abc123sha"); err == nil {
+	errMismatch := tools.VerifyTargetDigest(map[string]any{"expected_digest": "wrongsha"}, "abc123sha")
+	if errMismatch == nil {
 		t.Fatal("expected error when expected_digest does not match liveDigest")
+	}
+	if strings.Contains(errMismatch.Error(), "abc123sha") {
+		t.Fatalf("expected error message not to leak live digest, got: %s", errMismatch.Error())
+	}
+	if !strings.Contains(errMismatch.Error(), "pve://nodes/{node}") {
+		t.Fatalf("expected error message to contain resource pointer, got: %s", errMismatch.Error())
 	}
 
 	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": "abc123sha"}, "abc123sha"); err != nil {

@@ -516,11 +516,11 @@ func VerifyTargetDigest(args map[string]any, liveDigest string) error {
 	}
 	rawDigest, ok := args["expected_digest"]
 	if !ok || rawDigest == nil || strings.TrimSpace(fmt.Sprintf("%v", rawDigest)) == "" {
-		return errors.New("expected_digest is required when confirm=true; inspect configuration resource to obtain target digest")
+		return errors.New("expected_digest is required when confirm=true; inspect configuration resource (pve://nodes/{node}/qemu/{vmid}/config or pve://nodes/{node}/lxc/{vmid}/config) to obtain target digest")
 	}
 	expectedDigest := strings.TrimSpace(fmt.Sprintf("%v", rawDigest))
 	if expectedDigest != strings.TrimSpace(liveDigest) {
-		return fmt.Errorf("target digest mismatch: live guest digest is %q, but expected_digest was %q (guest may have been modified or mis-targeted)", liveDigest, expectedDigest)
+		return errors.New("target digest mismatch: expected_digest does not match the live machine configuration; inspect configuration resource (pve://nodes/{node}/qemu/{vmid}/config or pve://nodes/{node}/lxc/{vmid}/config) to obtain the current digest")
 	}
 	return nil
 }
