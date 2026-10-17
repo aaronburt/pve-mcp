@@ -16,34 +16,41 @@ import (
 
 const Instructions = `Proxmox VE (PVE) Model Context Protocol Server.
 
-OPERATIONAL PRINCIPLES & SAFETY GUARDRAILS:
+MANDATORY OPERATIONAL DIRECTIVES FOR THE MODEL:
 
-1. Two-Phase Confirmation Protocol:
-   - All state-changing operations (power transitions, hardware/network changes, creation, cloning, reboot) require two-phase confirmation.
-   - ALWAYS invoke the tool first with "confirm": false (or omitted) to generate a dry-run impact preview.
-   - Present the structured preview to the human user and request explicit authorization.
-   - NEVER call a tool with "confirm": true without prior, explicit user approval.
+1. Precision & Zero-Guessing Rule ("Read Before Write"):
+   - You must be strictly precise on all calls. NEVER guess, estimate, or assume VMIDs, guest hostnames, node names, storage pools, network bridges, or appliance templates.
+   - ALWAYS inspect current state first using MCP Resources (e.g. pve://cluster/resources, pve://nodes/{node}/status, pve://nodes/{node}/qemu/{vmid}/config, pve://nodes/{node}/lxc/{vmid}/config).
+   - Verify that target guests, nodes, and storages actually exist before invoking any tool.
 
-2. Target Discovery Before Action ("Read Before Write"):
-   - Inspect cluster and guest state via MCP Resources (pve://...) or task status before planning changes.
-   - Avoid guessing guest status, CPU/RAM allocations, or network bridges. Verify actual values first.
+2. Two-Phase Confirmation Protocol ("confirm": true Rule):
+   - ALL state-changing or mutating tools (power actions, hardware resizing, network updates, creation, cloning, reboot) enforce strict two-phase confirmation.
+   - Initial Call: ALWAYS invoke the tool with "confirm": false (or omit "confirm"). This generates a structured [DRY RUN PREVIEW - USER CONFIRMATION REQUIRED] impact plan without making changes.
+   - User Presentation: Present the full dry-run plan clearly to the human user and explicitly request their confirmation to proceed.
+   - Confirmation Call: Re-run the tool with "confirm": true ONLY AFTER the human user explicitly responds with unambiguous authorization (e.g., "yes", "proceed", "confirmed").
+   - Absolute Restrictions:
+     * NEVER pass "confirm": true on an initial call or in anticipation of approval.
+     * NEVER pass "confirm": true in the same turn as generating the dry-run preview.
+     * If the user rejects, says "no", or provides alternative instructions, immediately abort and NEVER pass "confirm": true.
 
-3. Target Verification & Accidental Power-Off Protection:
-   - Always verify the VMID and node before invoking actions.
-   - When issuing power 'stop' or 'shutdown' actions on guests, provide "expected_name" matching the guest's actual hostname to prevent accidental VMID mismatch.
+3. Anti-Hallucination & Destructive Action Safeguards:
+   - When stopping, shutting down, or powering off a guest (pve_qemu_power, pve_lxc_power), you MUST supply the "expected_name" parameter matching the verified hostname. The server verifies this to prevent VMID collision accidents.
+   - When creating or modifying hardware, specify exact numeric integers (e.g., cores: 2, memory: 1024 in MB) and valid disk sizes (e.g. disk: "4G").
 
-4. Asynchronous Task Lifecycle:
-   - Proxmox mutations (start, stop, reboot, create, clone, resize) execute asynchronously and return a UPID (Unique Process ID).
-   - After dispatching an action, track completion by calling "pve_task_status" with the node and UPID until the exit status is returned.
+4. Asynchronous Task Lifecycle & Completion Verification:
+   - Mutations (start, stop, reboot, create, clone, disk resize) return a Proxmox UPID.
+   - Do NOT declare an operation completed simply because a task UPID was returned.
+   - You MUST call pve_task_status with the node and UPID to verify the task reaches status: "stopped" and exitstatus: "OK".
+   - If exitstatus indicates an error, report the exact failure to the user.
 
-5. Node Routing & Security Tiering:
-   - Every operation requires a valid "node" argument (e.g. "pve"). Operations targeting unauthorized nodes will be rejected by policy.
-   - Tools are filtered at server boot by security category flags (Power, Config, Storage, Destroy, Node Ops).
-   - If a tool returns "tool not found" or Proxmox returns HTTP 403 Forbidden, that capability is omitted by the active security tier. Explain the restriction to the user rather than hallucinating workarounds.
+5. Node Boundary & Security Scoping:
+   - Always specify the exact node (e.g. node: "pve"). Disallowed nodes are rejected immediately by policy.
+   - Tools are restricted at server boot by security categories (Power, Config, Storage, Destroy, Node Ops).
+   - If a tool returns "tool not found" or Proxmox returns HTTP 403, explain the active permission boundary rather than attempting workarounds.
 
-6. Creation & Resource Formats:
+6. Creation & Storage Reference Formats:
    - Valid VMIDs range from 100 to 999999999.
-   - Template references use "storage:vztmpl/<archive>" format (e.g. "SSD:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz").
+   - Appliance templates use "storage:vztmpl/<archive>" format (e.g. "SSD:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz").
    - Storage pools for rootfs/disks must be active and capable of storing images/rootdir (e.g. "local-lvm", "SSD").`
 
 type Server struct {
