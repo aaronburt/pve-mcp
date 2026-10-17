@@ -216,6 +216,7 @@ Or for Stdio transport:
 - **Node Whitelisting**: Set `PVE_ALLOWED_NODES` to restrict host operations exclusively to specific worker nodes.
 - **Hard IAM Exclusion**: Permission modification (`Permissions.Modify`) is never exposed, preventing privilege escalation.
 - **Two-Phase Confirmation**: Calling mutating tools with `confirm=false` returns an explicit dry-run preview (with running VM/CT impact warnings for node reboot/shutdown).
+- **Target Binding & Digest Verification**: All guest mutation tools require `expected_digest` (matching the live SHA-1 hash of the guest `.conf` file) when `confirm=true`, eliminating mis-targeting risks and preventing modifications against stale state.
 - **Protection & State Guards**: Machines must be stopped before destruction. Machines marked with `protection: 1` reject deletion requests.
 - **Disk Shrinking Prevention**: Validates target disk size strictly exceeds current capacity before dispatching to Proxmox.
 - **Progress Notifications**: Async operations support `notifications/progress` through client progress tokens.

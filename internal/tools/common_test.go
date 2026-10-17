@@ -703,3 +703,52 @@ func TestVerifyTargetIdentity(t *testing.T) {
 	}
 }
 
+func TestVerifyTargetDigest(t *testing.T) {
+	if err := tools.VerifyTargetDigest(map[string]any{}, ""); err != nil {
+		t.Fatalf("expected nil when liveDigest is empty: %v", err)
+	}
+
+	if err := tools.VerifyTargetDigest(nil, "abc123sha"); err == nil {
+		t.Fatal("expected error when liveDigest present but args nil")
+	}
+
+	if err := tools.VerifyTargetDigest(map[string]any{}, "abc123sha"); err == nil {
+		t.Fatal("expected error when liveDigest present but expected_digest omitted")
+	}
+
+	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": "   "}, "abc123sha"); err == nil {
+		t.Fatal("expected error when expected_digest is blank")
+	}
+
+	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": "wrongsha"}, "abc123sha"); err == nil {
+		t.Fatal("expected error when expected_digest does not match liveDigest")
+	}
+
+	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": "abc123sha"}, "abc123sha"); err != nil {
+		t.Fatalf("expected success when expected_digest matches liveDigest: %v", err)
+	}
+
+	if err := tools.VerifyTargetDigest(map[string]any{"expected_digest": " abc123sha  "}, "abc123sha"); err != nil {
+		t.Fatalf("expected success when trimmed expected_digest matches liveDigest: %v", err)
+	}
+}
+
+func TestFormatDryRunPreviewWithDigest(t *testing.T) {
+	previewWithout := tools.FormatDryRunPreview("Title", []string{"change 1"})
+	if !strings.Contains(previewWithout, "Title") || !strings.Contains(previewWithout, "change 1") {
+		t.Fatalf("unexpected preview output: %s", previewWithout)
+	}
+	if strings.Contains(previewWithout, "Target Digest") {
+		t.Fatalf("expected no digest in preview when empty, got: %s", previewWithout)
+	}
+
+	previewWith := tools.FormatDryRunPreviewWithDigest("Title", []string{"change 1"}, "sha1hash")
+	if !strings.Contains(previewWith, "Target Digest: sha1hash") {
+		t.Fatalf("expected Target Digest: sha1hash in preview, got: %s", previewWith)
+	}
+	if !strings.Contains(previewWith, `"expected_digest": "sha1hash"`) {
+		t.Fatalf("expected expected_digest parameter hint in preview, got: %s", previewWith)
+	}
+}
+
+

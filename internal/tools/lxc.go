@@ -30,6 +30,7 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 				mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
 				mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
 				mcp.WithString("expected_name", mcp.Description("Current hostname of the container; required when action is 'stop' to prevent accidental power-off")),
+				mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 				mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
 				mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
 				mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
@@ -70,13 +71,24 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 				return ErrorResult("force power-off ('stop') can cause filesystem corruption. Use 'shutdown' for graceful ACPI power-off, or pass force: true to confirm immediate power cut.")
 			}
 
+			var configData struct {
+				Digest   string `json:"digest"`
+				Hostname string `json:"hostname"`
+			}
+			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/lxc/%d/config", url.PathEscape(node), vmid), nil, &configData)
+
 			var statusData struct {
 				Status string `json:"status"`
 				Name   string `json:"name"`
 			}
 			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/lxc/%d/status/current", url.PathEscape(node), vmid), nil, &statusData)
 
-			if err := VerifyTargetIdentity(extractArgs(req.Params.Arguments), statusData.Name, action == "stop"); err != nil {
+			containerName := statusData.Name
+			if containerName == "" {
+				containerName = configData.Hostname
+			}
+
+			if err := VerifyTargetIdentity(extractArgs(req.Params.Arguments), containerName, action == "stop"); err != nil {
 				return ErrorResult(err.Error())
 			}
 
@@ -85,14 +97,19 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 				if currentStatus == "" {
 					currentStatus = "unknown"
 				}
-				preview := FormatDryRunPreview(
-					fmt.Sprintf("Power action %q on LXC %d (%s) (node %s)", action, vmid, statusData.Name, node),
+				preview := FormatDryRunPreviewWithDigest(
+					fmt.Sprintf("Power action %q on LXC %d (%s) (node %s)", action, vmid, containerName, node),
 					[]string{
 						fmt.Sprintf("Current Status: %s", currentStatus),
 						fmt.Sprintf("Target Action: %s", action),
 					},
+					configData.Digest,
 				)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), configData.Digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			path := fmt.Sprintf("/nodes/%s/lxc/%d/status/%s", url.PathEscape(node), vmid, action)
@@ -122,6 +139,7 @@ if cfg.EnableConfig {
 			mcp.WithInteger("cores", mcp.Description("Number of CPU cores")),
 			mcp.WithInteger("memory", mcp.Description("RAM allocation in Megabytes (MB)")),
 			mcp.WithInteger("swap", mcp.Description("Swap space in Megabytes (MB)")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply hardware updates; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -176,12 +194,23 @@ if cfg.EnableConfig {
 				return ErrorResult("at least one hardware attribute (cores, memory, swap) must be specified")
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(
+				preview := FormatDryRunPreviewWithDigest(
 					fmt.Sprintf("Update hardware on LXC %d (node %s)", vmid, node),
 					diffs,
+					digest,
 				)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
+			}
+
+			if digest != "" {
+				form.Set("digest", digest)
 			}
 
 			path := fmt.Sprintf("/nodes/%s/lxc/%d/config", url.PathEscape(node), vmid)
@@ -205,6 +234,7 @@ if cfg.EnableStorage {
 			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
 			mcp.WithString("disk", mcp.Required(), mcp.Description("Disk identifier (e.g. 'rootfs', 'mp0')")),
 			mcp.WithString("size", mcp.Required(), mcp.Description("Size extension or target capacity (e.g. '+5G', '20G')")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute disk resize; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -261,19 +291,28 @@ if cfg.EnableStorage {
 				return ErrorResult(err.Error())
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
 				diffs := []string{
 					fmt.Sprintf("Disk Device: %s", disk),
 					fmt.Sprintf("Current Volume Configuration: %s", diskConfigStr),
 					fmt.Sprintf("Requested Size Increase: %s", size),
 				}
-				preview := FormatDryRunPreview(fmt.Sprintf("Resize disk %q on LXC %d (node %s)", disk, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Resize disk %q on LXC %d (node %s)", disk, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set("disk", disk)
 			form.Set("size", size)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/lxc/%d/resize", url.PathEscape(node), vmid)
 			var taskUPID string
@@ -302,6 +341,7 @@ if cfg.EnableConfig {
 			mcp.WithNumber("rate", mcp.Description("Rate limit in MB/s")),
 			mcp.WithString("ip", mcp.Description("IPv4 address with CIDR mask (e.g. '192.168.1.50/24') or 'dhcp'")),
 			mcp.WithString("gw", mcp.Description("Default IPv4 gateway address")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply network changes; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -396,13 +436,22 @@ if cfg.EnableConfig {
 				fmt.Sprintf("Proposed Configuration: %s", mergedNet),
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Update network interface %s on LXC %d (node %s)", netID, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Update network interface %s on LXC %d (node %s)", netID, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set(netID, mergedNet)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/lxc/%d/config", url.PathEscape(node), vmid)
 			var raw json.RawMessage
@@ -427,6 +476,7 @@ if cfg.EnableStorage {
 			mcp.WithString("hostname", mcp.Description("Hostname for the new container")),
 			mcp.WithString("storage", mcp.Description("Target storage pool for the container rootfs")),
 			mcp.WithBoolean("full", mcp.Description("Full clone (default true) creates independent disk; false creates linked clone")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the source container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("wait", mcp.Description("Wait up to 30 seconds for the clone task to complete (default true)")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the clone; if false/omitted, returns a dry-run preview")),
 		),
@@ -487,9 +537,17 @@ if cfg.EnableStorage {
 				diffs = append(diffs, fmt.Sprintf("Target Storage: %s", storage))
 			}
 
+			var configData map[string]any
+			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/lxc/%d/config", url.PathEscape(node), vmid), nil, &configData)
+			digest, _ := configData["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Clone LXC %d to %d (%s) on node %s", vmid, newid, cloneType, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Clone LXC %d to %d (%s) on node %s", vmid, newid, cloneType, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
@@ -687,6 +745,7 @@ if cfg.EnableDestroy {
 			mcp.WithBoolean("purge", mcp.Description("Remove container from backup jobs and purge disk configurations (default true)")),
 			mcp.WithBoolean("destroy_disks", mcp.Description("Remove and erase all associated mountpoints and disks (default true)")),
 			mcp.WithBoolean("unprotect", mcp.Description("Explicitly remove protection flag before deletion if enabled")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute deletion; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -752,9 +811,15 @@ if cfg.EnableDestroy {
 				"Action: PERMANENT DELETION of LXC container and all rootfs/mountpoint storage",
 			}
 
+			digest, _ := configData["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("DESTROY LXC %d (%s) on node %s", vmid, statusData.Name, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("DESTROY LXC %d (%s) on node %s", vmid, statusData.Name, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			purge := ParseOptionalBool(req.Params.Arguments, "purge", true)
@@ -787,6 +852,7 @@ if cfg.EnableDestroy {
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
 			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Container ID")),
 			mcp.WithBoolean("protected", mcp.Required(), mcp.Description("Set to true to enable deletion protection; false to unprotect")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target container; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute protection change; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -839,13 +905,22 @@ if cfg.EnableDestroy {
 				fmt.Sprintf("Proposed Protection: %s", targetProtection),
 			}
 
+			digest, _ := configData["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Set protection to %s on LXC %d (node %s)", targetProtection, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Set protection to %s on LXC %d (node %s)", targetProtection, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set("protection", targetVal)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/lxc/%d/config", url.PathEscape(node), vmid)
 			var raw json.RawMessage

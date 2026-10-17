@@ -30,6 +30,7 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 				mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
 				mcp.WithString("action", mcp.Required(), mcp.Description("Power action to perform"), mcp.Enum("start", "stop", "shutdown", "reboot", "suspend", "resume")),
 				mcp.WithString("expected_name", mcp.Description("Current name of the virtual machine; required when action is 'stop' to prevent accidental power-off")),
+				mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 				mcp.WithInteger("timeout", mcp.Description("Graceful shutdown timeout in seconds")),
 				mcp.WithBoolean("force", mcp.Description("Required true to execute an ungraceful hard power-off ('stop')")),
 				mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the power change; if false/omitted, returns a dry-run preview")),
@@ -70,13 +71,24 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 				return ErrorResult("force power-off ('stop') can cause filesystem corruption. Use 'shutdown' for graceful ACPI power-off, or pass force: true to confirm immediate power cut.")
 			}
 
+			var configData struct {
+				Name   string `json:"name"`
+				Digest string `json:"digest"`
+			}
+			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(node), vmid), nil, &configData)
+
 			var statusData struct {
 				Status string `json:"status"`
 				Name   string `json:"name"`
 			}
 			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/qemu/%d/status/current", url.PathEscape(node), vmid), nil, &statusData)
 
-			if err := VerifyTargetIdentity(extractArgs(req.Params.Arguments), statusData.Name, action == "stop"); err != nil {
+			vmName := statusData.Name
+			if vmName == "" {
+				vmName = configData.Name
+			}
+
+			if err := VerifyTargetIdentity(extractArgs(req.Params.Arguments), vmName, action == "stop"); err != nil {
 				return ErrorResult(err.Error())
 			}
 
@@ -85,14 +97,19 @@ func RegisterQEMUTools(s *server.MCPServer, client *pve.Client, cfg *config.Conf
 				if currentStatus == "" {
 					currentStatus = "unknown"
 				}
-				preview := FormatDryRunPreview(
-					fmt.Sprintf("Power action %q on VM %d (%s) (node %s)", action, vmid, statusData.Name, node),
+				preview := FormatDryRunPreviewWithDigest(
+					fmt.Sprintf("Power action %q on VM %d (%s) (node %s)", action, vmid, vmName, node),
 					[]string{
 						fmt.Sprintf("Current Status: %s", currentStatus),
 						fmt.Sprintf("Target Action: %s", action),
 					},
+					configData.Digest,
 				)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), configData.Digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			path := fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", url.PathEscape(node), vmid, action)
@@ -124,6 +141,7 @@ if cfg.EnableConfig {
 			mcp.WithString("cpu", mcp.Description("Emulated CPU type (e.g. 'host', 'kvm64', 'x86-64-v2-AES')")),
 			mcp.WithInteger("memory", mcp.Description("RAM allocation in Megabytes (MB)")),
 			mcp.WithInteger("balloon", mcp.Description("Dynamically allocated balloon RAM in Megabytes (MB)")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply hardware updates; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -186,12 +204,22 @@ if cfg.EnableConfig {
 				return ErrorResult("at least one hardware attribute (cores, sockets, cpu, memory, balloon) must be specified")
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(
+				preview := FormatDryRunPreviewWithDigest(
 					fmt.Sprintf("Update hardware on VM %d (node %s)", vmid, node),
 					diffs,
+					digest,
 				)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
+			}
+			if digest != "" {
+				form.Set("digest", digest)
 			}
 
 			path := fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(node), vmid)
@@ -215,6 +243,7 @@ if cfg.EnableStorage {
 			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
 			mcp.WithString("disk", mcp.Required(), mcp.Description("Disk identifier (e.g. 'scsi0', 'virtio0', 'sata0')")),
 			mcp.WithString("size", mcp.Required(), mcp.Description("Size extension or target capacity (e.g. '+10G', '50G')")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute disk resize; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -271,19 +300,28 @@ if cfg.EnableStorage {
 				return ErrorResult(err.Error())
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
 				diffs := []string{
 					fmt.Sprintf("Disk Device: %s", disk),
 					fmt.Sprintf("Current Volume Configuration: %s", diskConfigStr),
 					fmt.Sprintf("Requested Size Increase: %s", size),
 				}
-				preview := FormatDryRunPreview(fmt.Sprintf("Resize disk %q on VM %d (node %s)", disk, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Resize disk %q on VM %d (node %s)", disk, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set("disk", disk)
 			form.Set("size", size)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/qemu/%d/resize", url.PathEscape(node), vmid)
 			var taskUPID string
@@ -310,6 +348,7 @@ if cfg.EnableConfig {
 			mcp.WithInteger("tag", mcp.Description("VLAN tag (1-4094)")),
 			mcp.WithBoolean("firewall", mcp.Description("Enable PVE firewall on this interface")),
 			mcp.WithNumber("rate", mcp.Description("Rate limit in MB/s")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to apply network changes; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -403,13 +442,22 @@ if cfg.EnableConfig {
 				fmt.Sprintf("Proposed Configuration: %s", mergedNet),
 			}
 
+			digest, _ := currentConfig["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Update network interface %s on VM %d (node %s)", netID, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Update network interface %s on VM %d (node %s)", netID, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set(netID, mergedNet)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(node), vmid)
 			var raw json.RawMessage
@@ -436,6 +484,7 @@ if cfg.EnableStorage {
 			mcp.WithBoolean("full", mcp.Description("Full clone (default true) creates independent disks; false creates linked clone")),
 			mcp.WithString("pool", mcp.Description("Add the cloned VM to a specified resource pool")),
 			mcp.WithBoolean("wait", mcp.Description("Wait up to 30 seconds for the clone task to complete (default true)")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the source VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute the clone; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -499,9 +548,18 @@ if cfg.EnableStorage {
 				diffs = append(diffs, fmt.Sprintf("Target Pool: %s", pool))
 			}
 
+			var currentConfig struct {
+				Digest string `json:"digest"`
+			}
+			_ = client.Get(ctx, fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(node), vmid), nil, &currentConfig)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Clone VM %d to %d (%s) on node %s", vmid, newid, cloneType, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Clone VM %d to %d (%s) on node %s", vmid, newid, cloneType, node), diffs, currentConfig.Digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), currentConfig.Digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
@@ -559,6 +617,7 @@ if cfg.EnableDestroy {
 			mcp.WithBoolean("purge", mcp.Description("Remove VM from backup jobs and purge disk configurations (default true)")),
 			mcp.WithBoolean("destroy_disks", mcp.Description("Remove and erase all associated virtual disks (default true)")),
 			mcp.WithBoolean("unprotect", mcp.Description("Explicitly remove protection flag before deletion if enabled")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute deletion; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -624,9 +683,15 @@ if cfg.EnableDestroy {
 				"Action: PERMANENT DELETION of virtual machine and all attached storage disks",
 			}
 
+			digest, _ := configData["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("DESTROY VM %d (%s) on node %s", vmid, statusData.Name, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("DESTROY VM %d (%s) on node %s", vmid, statusData.Name, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			purge := ParseOptionalBool(req.Params.Arguments, "purge", true)
@@ -659,6 +724,7 @@ if cfg.EnableDestroy {
 			mcp.WithString("node", mcp.Required(), mcp.Description("Node name")),
 			mcp.WithInteger("vmid", mcp.Required(), mcp.Description("Virtual Machine ID")),
 			mcp.WithBoolean("protected", mcp.Required(), mcp.Description("Set to true to enable deletion protection; false to unprotect")),
+			mcp.WithString("expected_digest", mcp.Description("SHA1 config digest of the target VM; required when confirm=true to prevent accidental mis-targeting or concurrent modification")),
 			mcp.WithBoolean("confirm", mcp.Description("Set to true after user confirmation to execute protection change; if false/omitted, returns a dry-run preview")),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -711,13 +777,22 @@ if cfg.EnableDestroy {
 				fmt.Sprintf("Proposed Protection: %s", targetProtection),
 			}
 
+			digest, _ := configData["digest"].(string)
+
 			if !IsConfirmed(req.Params.Arguments) {
-				preview := FormatDryRunPreview(fmt.Sprintf("Set protection to %s on VM %d (node %s)", targetProtection, vmid, node), diffs)
+				preview := FormatDryRunPreviewWithDigest(fmt.Sprintf("Set protection to %s on VM %d (node %s)", targetProtection, vmid, node), diffs, digest)
 				return mcp.NewToolResultText(preview), nil
+			}
+
+			if err := VerifyTargetDigest(extractArgs(req.Params.Arguments), digest); err != nil {
+				return ErrorResult(err.Error())
 			}
 
 			form := url.Values{}
 			form.Set("protection", targetVal)
+			if digest != "" {
+				form.Set("digest", digest)
+			}
 
 			path := fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(node), vmid)
 			var raw json.RawMessage

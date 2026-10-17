@@ -469,9 +469,16 @@ func MergeNetworkConfig(current string, updates map[string]string) string {
 }
 
 func FormatDryRunPreview(title string, diffs []string) string {
+	return FormatDryRunPreviewWithDigest(title, diffs, "")
+}
+
+func FormatDryRunPreviewWithDigest(title string, diffs []string, digest string) string {
 	var sb strings.Builder
 	sb.WriteString("[DRY RUN PREVIEW - USER CONFIRMATION REQUIRED]\n")
 	sb.WriteString(title)
+	if digest != "" {
+		sb.WriteString(fmt.Sprintf("\nTarget Digest: %s", digest))
+	}
 	sb.WriteString("\n\nProposed Changes:\n")
 	for _, diff := range diffs {
 		sb.WriteString("  - ")
@@ -480,7 +487,11 @@ func FormatDryRunPreview(title string, diffs []string) string {
 	}
 	sb.WriteString("\nTo apply these changes:\n")
 	sb.WriteString("1. Present this exact plan to the user and obtain their explicit approval.\n")
-	sb.WriteString("2. Re-run this tool with parameter \"confirm\": true.\n")
+	if digest != "" {
+		sb.WriteString(fmt.Sprintf("2. Re-run this tool with parameter \"confirm\": true and \"expected_digest\": %q.\n", digest))
+	} else {
+		sb.WriteString("2. Re-run this tool with parameter \"confirm\": true.\n")
+	}
 	return sb.String()
 }
 
@@ -495,6 +506,21 @@ func VerifyTargetIdentity(args map[string]any, liveName string, required bool) e
 	expectedName := strings.TrimSpace(fmt.Sprintf("%v", rawName))
 	if expectedName != liveName {
 		return fmt.Errorf("target identity mismatch: live machine name is %q, but expected_name was %q", liveName, expectedName)
+	}
+	return nil
+}
+
+func VerifyTargetDigest(args map[string]any, liveDigest string) error {
+	if liveDigest == "" {
+		return nil
+	}
+	rawDigest, ok := args["expected_digest"]
+	if !ok || rawDigest == nil || strings.TrimSpace(fmt.Sprintf("%v", rawDigest)) == "" {
+		return errors.New("expected_digest is required when confirm=true; inspect configuration resource to obtain target digest")
+	}
+	expectedDigest := strings.TrimSpace(fmt.Sprintf("%v", rawDigest))
+	if expectedDigest != strings.TrimSpace(liveDigest) {
+		return fmt.Errorf("target digest mismatch: live guest digest is %q, but expected_digest was %q (guest may have been modified or mis-targeted)", liveDigest, expectedDigest)
 	}
 	return nil
 }
