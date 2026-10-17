@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/aaronburt/pve-mcp/internal/config"
@@ -83,7 +84,20 @@ func OriginMiddleware(cfg *config.Config, next http.Handler) http.Handler {
 
 func RequestLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("incoming http request", "method", r.Method, "url", r.URL.String())
+		slog.Info("incoming http request", "method", r.Method, "url", redactedURL(r.URL))
 		next.ServeHTTP(w, r)
 	})
+}
+
+// redactedURL renders u with the value of any token query parameter removed so
+// the auth token never reaches logs.
+func redactedURL(u *url.URL) string {
+	q := u.Query()
+	if !q.Has("token") {
+		return u.String()
+	}
+	q.Set("token", "[REDACTED]")
+	c := *u
+	c.RawQuery = q.Encode()
+	return c.String()
 }
