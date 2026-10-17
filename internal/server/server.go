@@ -11,6 +11,7 @@ import (
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/aaronburt/pve-mcp/internal/resources"
 	"github.com/aaronburt/pve-mcp/internal/tools"
+	"github.com/aaronburt/pve-mcp/internal/webui"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -58,23 +59,50 @@ type Server struct {
 	sseServer        *mcpserver.SSEServer
 	streamableServer *mcpserver.StreamableHTTPServer
 	cfg              *config.Config
+	mcpServer        *mcpserver.MCPServer
 }
 
-func CreateMCPServer(cfg *config.Config, client *pve.Client) *mcpserver.MCPServer {
-	mcpServer := mcpserver.NewMCPServer(
-		"pve-mcp",
-		"1.1.0",
+// Option customizes server construction.
+type Option func(*options)
+
+type options struct {
+	observer *webui.Observer
+}
+
+// WithObserver installs the Web UI observer. Without it (the default) no
+// middleware or hooks are attached.
+func WithObserver(obs *webui.Observer) Option {
+	return func(o *options) { o.observer = obs }
+}
+
+func CreateMCPServer(cfg *config.Config, client *pve.Client, opts ...Option) *mcpserver.MCPServer {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	serverOpts := []mcpserver.ServerOption{
 		mcpserver.WithRecovery(),
 		mcpserver.WithInstructions(Instructions),
-	)
+	}
+	if o.observer != nil {
+		serverOpts = append(serverOpts,
+			mcpserver.WithToolHandlerMiddleware(o.observer.Middleware()),
+			mcpserver.WithHooks(o.observer.Hooks()),
+		)
+	}
+	mcpServer := mcpserver.NewMCPServer("pve-mcp", "1.1.0", serverOpts...)
+	if o.observer != nil {
+		o.observer.SetServer(mcpServer)
+	}
 	tools.RegisterAll(mcpServer, client, cfg)
 	resources.RegisterAll(mcpServer, client)
 	prompts.RegisterAll(mcpServer)
 	return mcpServer
 }
 
-func NewServer(cfg *config.Config, client *pve.Client) (*Server, error) {
-	mcpServer := CreateMCPServer(cfg, client)
+func NewServer(cfg *config.Config, client *pve.Client, opts ...Option) (*Server, error) {
+	mcpServer := CreateMCPServer(cfg, client, opts...)
 
 	sseServer := mcpserver.NewSSEServer(mcpServer)
 	streamableServer := mcpserver.NewStreamableHTTPServer(mcpServer, mcpserver.WithStateLess(true))
@@ -114,6 +142,7 @@ func NewServer(cfg *config.Config, client *pve.Client) (*Server, error) {
 		sseServer:        sseServer,
 		streamableServer: streamableServer,
 		cfg:              cfg,
+		mcpServer:        mcpServer,
 	}, nil
 }
 
@@ -125,6 +154,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.sseServer.Shutdown(ctx)
 	_ = s.streamableServer.Shutdown(ctx)
 	return s.httpServer.Shutdown(ctx)
+}
+
+// MCPServer returns the underlying MCP server.
+func (s *Server) MCPServer() *mcpserver.MCPServer {
+	return s.mcpServer
 }
 
 func (s *Server) Addr() string {

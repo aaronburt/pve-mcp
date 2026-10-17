@@ -29,6 +29,12 @@ type Config struct {
 	EnableNodeOps      bool
 	EnableNodeShutdown bool
 	AllowedNodes       []string
+	UIEnabled          bool
+	UIBindAddress      string
+	UIPort             string
+	UIToken            string
+	UIAllowInsecure    bool
+	UIAllowedHosts     []string
 }
 
 func parseBoolEnv(key string) bool {
@@ -154,6 +160,24 @@ func LoadFromEnv() (*Config, error) {
 		}
 	}
 
+	uiBind := strings.TrimSpace(os.Getenv("MCP_UI_BIND_ADDRESS"))
+	if uiBind == "" {
+		uiBind = "127.0.0.1"
+	}
+	uiPort := strings.TrimPrefix(strings.TrimSpace(os.Getenv("MCP_UI_PORT")), ":")
+	if uiPort == "" {
+		uiPort = "8081"
+	}
+	if p, err := strconv.Atoi(uiPort); err != nil || p < 1 || p > 65535 {
+		return nil, errors.New("MCP_UI_PORT must be a valid TCP port")
+	}
+	var uiAllowedHosts []string
+	for _, h := range strings.Split(os.Getenv("MCP_UI_ALLOWED_HOSTS"), ",") {
+		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
+			uiAllowedHosts = append(uiAllowedHosts, trimmed)
+		}
+	}
+
 	return &Config{
 		Host:               cleanHost,
 		TokenID:            tokenID,
@@ -174,5 +198,11 @@ func LoadFromEnv() (*Config, error) {
 		EnableNodeOps:      enableNodeOps,
 		EnableNodeShutdown: enableNodeShutdown,
 		AllowedNodes:       allowedNodes,
+		UIEnabled:          parseBoolEnv("MCP_UI_ENABLED"),
+		UIBindAddress:      uiBind,
+		UIPort:             uiPort,
+		UIToken:            strings.TrimSpace(os.Getenv("MCP_UI_TOKEN")),
+		UIAllowInsecure:    parseBoolEnv("MCP_UI_ALLOW_INSECURE_BIND"),
+		UIAllowedHosts:     uiAllowedHosts,
 	}, nil
 }

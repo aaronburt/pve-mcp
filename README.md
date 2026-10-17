@@ -247,6 +247,31 @@ Or for Stdio transport:
 | `MCP_ALLOWED_ORIGINS` | No | — | Comma-separated allowed HTTP `Origin` headers. |
 | `PVE_TIMEOUT_SECONDS` | No | `30` | HTTP request timeout in seconds. |
 | `LOG_LEVEL` | No | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`). |
+| `MCP_UI_ENABLED` | No | `false` | Enable the opt-in Web UI (or pass `--ui`). Requires `MCP_UI_TOKEN`. |
+| `MCP_UI_TOKEN` | With UI | — | Dedicated Web UI token. Separate from `MCP_AUTH_TOKEN` and the PVE token; the UI does not start without it. |
+| `MCP_UI_BIND_ADDRESS` | No | `127.0.0.1` | Interface for the Web UI listener. Non-loopback addresses are refused unless `MCP_UI_ALLOW_INSECURE_BIND=true`. |
+| `MCP_UI_PORT` | No | `8081` | Web UI port (or `--ui-port`). |
+| `MCP_UI_ALLOW_INSECURE_BIND` | No | `false` | Allow a non-loopback UI bind. The token and session cookie then travel over plain HTTP. |
+| `MCP_UI_ALLOWED_HOSTS` | No | — | Comma-separated extra `Host` header values accepted by the UI (DNS-rebinding guard). |
+
+---
+
+## Web UI (opt-in)
+
+Off by default: when disabled nothing is allocated, no listener starts and no hooks are installed. Enable it with `--ui` or `MCP_UI_ENABLED=true` and set `MCP_UI_TOKEN`:
+
+```bash
+MCP_UI_TOKEN="$(openssl rand -hex 32)" ./pve-mcp --ui
+# then open http://127.0.0.1:8081 and sign in with the token
+```
+
+It works in both `--stdio` and HTTP modes and currently provides (read-only):
+
+- Health bar: PVE reachability and latency, transport, tool count, Go heap, uptime.
+- Live event stream (SSE) of tool calls (read, dry-run, mutation, error), resource reads and server logs, held in a 250-entry in-memory ring buffer (not an audit log; it is lost on restart and can be cleared from the UI).
+- Live log-level selector.
+
+The UI cannot change guards (`PVE_ENABLE_*`), allowed nodes, tokens or any connection setting. The UI token should be treated like the PVE token: anyone holding it can read tool arguments and results. The token is never printed to the logs. Running in Docker requires `MCP_UI_BIND_ADDRESS=0.0.0.0`, `MCP_UI_ALLOW_INSECURE_BIND=true` and publishing the UI port only on a trusted interface (for example `-p 127.0.0.1:8081:8081`).
 
 ---
 

@@ -187,3 +187,45 @@ func TestLoadDotEnv(t *testing.T) {
 		t.Errorf("got %s, want antigravity", os.Getenv("VAR3"))
 	}
 }
+
+func TestLoadFromEnv_WebUIDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("PVE_HOST", "https://pve.local:8006")
+	t.Setenv("PVE_TOKEN_ID", "root@pam!token")
+	t.Setenv("PVE_TOKEN_SECRET", "00000000-0000-0000-0000-000000000000")
+	t.Setenv("MCP_UI_ENABLED", "")
+	t.Setenv("MCP_UI_BIND_ADDRESS", "")
+	t.Setenv("MCP_UI_PORT", "")
+	t.Setenv("MCP_UI_TOKEN", "")
+	t.Setenv("MCP_UI_ALLOW_INSECURE_BIND", "")
+	t.Setenv("MCP_UI_ALLOWED_HOSTS", "")
+
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.UIEnabled || cfg.UIBindAddress != "127.0.0.1" || cfg.UIPort != "8081" || cfg.UIToken != "" || cfg.UIAllowInsecure {
+		t.Fatalf("unexpected UI defaults: %+v", cfg)
+	}
+
+	t.Setenv("MCP_UI_ENABLED", "true")
+	t.Setenv("MCP_UI_BIND_ADDRESS", "10.0.0.5")
+	t.Setenv("MCP_UI_PORT", ":9000")
+	t.Setenv("MCP_UI_TOKEN", " ui-secret ")
+	t.Setenv("MCP_UI_ALLOW_INSECURE_BIND", "1")
+	t.Setenv("MCP_UI_ALLOWED_HOSTS", "A.lan, b.lan ,")
+	cfg, err = config.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.UIEnabled || cfg.UIBindAddress != "10.0.0.5" || cfg.UIPort != "9000" || cfg.UIToken != "ui-secret" || !cfg.UIAllowInsecure {
+		t.Fatalf("unexpected UI overrides: %+v", cfg)
+	}
+	if len(cfg.UIAllowedHosts) != 2 || cfg.UIAllowedHosts[0] != "a.lan" || cfg.UIAllowedHosts[1] != "b.lan" {
+		t.Fatalf("unexpected allowed hosts: %v", cfg.UIAllowedHosts)
+	}
+
+	t.Setenv("MCP_UI_PORT", "99999")
+	if _, err := config.LoadFromEnv(); err == nil {
+		t.Fatal("expected error for invalid MCP_UI_PORT")
+	}
+}

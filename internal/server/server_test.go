@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/aaronburt/pve-mcp/internal/config"
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/aaronburt/pve-mcp/internal/server"
+	"github.com/aaronburt/pve-mcp/internal/webui"
 )
 
 func TestAuthMiddleware(t *testing.T) {
@@ -474,5 +476,54 @@ func TestStreamableHTTPResourcesAndPrompts(t *testing.T) {
 	bodyPrompts, _ := io.ReadAll(respPrompts.Body)
 	if !strings.Contains(string(bodyPrompts), "cluster_health_audit") {
 		t.Errorf("expected cluster_health_audit in prompts list, got %s", string(bodyPrompts))
+	}
+}
+
+func TestRequestLoggerRedactsTokenQuery(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	h := server.RequestLoggerMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/sse?token=super-secret&x=1", nil))
+
+	if strings.Contains(buf.String(), "super-secret") {
+		t.Fatalf("token leaked into log: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "REDACTED") {
+		t.Fatalf("expected redaction marker: %s", buf.String())
+	}
+}
+
+func TestCreateMCPServerWithObserver(t *testing.T) {
+	pveSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"OK","upid":"UPID:x"}}`))
+	}))
+	defer pveSrv.Close()
+
+	cfg := &config.Config{Host: pveSrv.URL, TokenID: "user@pve!token", TokenSecret: "s3cret-value", Timeout: 5 * time.Second}
+	client, err := pve.NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := webui.NewBuffer()
+	obs := webui.NewObserver(buf, client.Sanitize)
+	mcpServer := server.CreateMCPServer(cfg, client, server.WithObserver(obs))
+
+	msg := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pve_task_status","arguments":{"node":"pve","upid":"UPID:x"}}}`
+	mcpServer.HandleMessage(context.Background(), []byte(msg))
+
+	entries := buf.Snapshot()
+	if len(entries) != 1 || entries[0].Kind != webui.KindToolRead || entries[0].Message != "pve_task_status" {
+		t.Fatalf("expected one TOOL_READ entry, got %+v", entries)
+	}
+
+	plain := server.CreateMCPServer(cfg, client)
+	plain.HandleMessage(context.Background(), []byte(msg))
+	if len(buf.Snapshot()) != 1 {
+		t.Fatal("a server created without an observer must not record anything")
 	}
 }

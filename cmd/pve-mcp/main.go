@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,26 +17,49 @@ import (
 	"github.com/aaronburt/pve-mcp/internal/config"
 	"github.com/aaronburt/pve-mcp/internal/pve"
 	"github.com/aaronburt/pve-mcp/internal/server"
+	"github.com/aaronburt/pve-mcp/internal/webui"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
-func setupLogger(levelStr string, out io.Writer) {
-	var level slog.Level
+var logLevel = new(slog.LevelVar)
+
+func parseLevel(levelStr string) slog.Level {
 	switch strings.ToLower(levelStr) {
 	case "debug":
-		level = slog.LevelDebug
+		return slog.LevelDebug
 	case "warn", "warning":
-		level = slog.LevelWarn
+		return slog.LevelWarn
 	case "error":
-		level = slog.LevelError
+		return slog.LevelError
 	default:
-		level = slog.LevelInfo
+		return slog.LevelInfo
 	}
+}
 
-	handler := slog.NewJSONHandler(out, &slog.HandlerOptions{
-		Level: level,
-	})
+func setupLogger(levelStr string, out io.Writer, wrap func(slog.Handler) slog.Handler) {
+	logLevel.Set(parseLevel(levelStr))
+	var handler slog.Handler = slog.NewJSONHandler(out, &slog.HandlerOptions{Level: logLevel})
+	if wrap != nil {
+		handler = wrap(handler)
+	}
 	slog.SetDefault(slog.New(handler))
+}
+
+func uiFlags(args []string) (enabled bool, port string) {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--ui" || args[i] == "-ui":
+			enabled = true
+		case args[i] == "--ui-port" || args[i] == "-ui-port":
+			if i+1 < len(args) {
+				port = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(args[i], "--ui-port="):
+			port = strings.TrimPrefix(args[i], "--ui-port=")
+		}
+	}
+	return enabled, port
 }
 
 func main() {
@@ -53,7 +77,7 @@ func main() {
 	}
 
 	if isStdio {
-		setupLogger("error", os.Stderr)
+		setupLogger("error", os.Stderr, nil)
 	}
 
 	cfg, err := config.LoadFromEnv()
@@ -62,8 +86,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	uiOn, uiPort := uiFlags(os.Args[1:])
+	if uiOn {
+		cfg.UIEnabled = true
+	}
+	if uiPort != "" {
+		if p, err := strconv.Atoi(uiPort); err != nil || p < 1 || p > 65535 {
+			slog.Error("--ui-port must be a valid TCP port", "value", uiPort)
+			os.Exit(1)
+		}
+		cfg.UIPort = uiPort
+	}
+
+	logOut := io.Writer(os.Stdout)
+	if isStdio {
+		logOut = os.Stderr
+	}
+
 	if !isStdio {
-		setupLogger(cfg.LogLevel, os.Stdout)
+		setupLogger(cfg.LogLevel, os.Stdout, nil)
 		slog.Info("starting pve-mcp server",
 			"host", cfg.Host,
 			"token_id", cfg.TokenID,
@@ -73,7 +114,7 @@ func main() {
 			"auth_required", cfg.MCPAuthToken != "",
 		)
 	} else {
-		setupLogger(cfg.LogLevel, os.Stderr)
+		setupLogger(cfg.LogLevel, os.Stderr, nil)
 	}
 
 	client, err := pve.NewClient(cfg)
@@ -82,8 +123,75 @@ func main() {
 		os.Exit(1)
 	}
 
+	var (
+		serverOpts []server.Option
+		ui         *webui.Server
+		toolCount  func() int
+	)
+	if cfg.UIEnabled {
+		if cfg.UIToken == "" {
+			slog.Error("web ui not started: MCP_UI_TOKEN is required")
+		} else {
+			buf := webui.NewBuffer()
+			obs := webui.NewObserver(buf, client.Sanitize)
+			transport := "http"
+			if isStdio {
+				transport = "stdio"
+			}
+			var err error
+			ui, err = webui.New(webui.Options{
+				BindAddress:       cfg.UIBindAddress,
+				Port:              cfg.UIPort,
+				Token:             cfg.UIToken,
+				AllowInsecureBind: cfg.UIAllowInsecure,
+				AllowedHosts:      cfg.UIAllowedHosts,
+				Transport:         transport,
+				Buffer:            buf,
+				LogLevel:          logLevel,
+				Ping: func(ctx context.Context) error {
+					var v map[string]any
+					return client.Get(ctx, "/version", nil, &v)
+				},
+				ToolCount: func() int { return toolCount() },
+			})
+			if err != nil {
+				slog.Error("web ui not started", "error", err)
+				buf.Close()
+				ui = nil
+			} else {
+				setupLogger(cfg.LogLevel, logOut, obs.LogHandler)
+				serverOpts = append(serverOpts, server.WithObserver(obs))
+			}
+		}
+	}
+
+	startUI := func() {
+		if ui == nil {
+			return
+		}
+		go func() {
+			slog.Info("web ui listening", "url", "http://"+ui.Addr())
+			if err := ui.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("web ui listener error", "error", err)
+			}
+		}()
+	}
+	stopUI := func() {
+		if ui == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := ui.Shutdown(ctx); err != nil {
+			slog.Error("error during web ui shutdown", "error", err)
+		}
+	}
+
 	if isStdio {
-		mcpServer := server.CreateMCPServer(cfg, client)
+		mcpServer := server.CreateMCPServer(cfg, client, serverOpts...)
+		toolCount = func() int { return len(mcpServer.ListTools()) }
+		startUI()
+		defer stopUI()
 		stdioServer := mcpserver.NewStdioServer(mcpServer)
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
@@ -94,11 +202,13 @@ func main() {
 		return
 	}
 
-	srv, err := server.NewServer(cfg, client)
+	srv, err := server.NewServer(cfg, client, serverOpts...)
 	if err != nil {
 		slog.Error("failed to initialize http server", "error", err)
 		os.Exit(1)
 	}
+	toolCount = func() int { return len(srv.MCPServer().ListTools()) }
+	startUI()
 
 	shutdownChan := make(chan os.Signal, 1)
 	signal.Notify(shutdownChan, os.Interrupt, syscall.SIGTERM)
@@ -122,6 +232,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	stopUI()
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("error during server shutdown", "error", err)
 		os.Exit(1)
