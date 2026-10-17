@@ -46,6 +46,9 @@ func RegisterLXCTools(s *server.MCPServer, client *pve.Client, cfg *config.Confi
 			if err != nil {
 				return ErrorResult(err.Error())
 			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
+				return ErrorResult(err.Error())
+			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -133,6 +136,9 @@ if cfg.EnableConfig {
 			if err != nil {
 				return ErrorResult(err.Error())
 			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
+				return ErrorResult(err.Error())
+			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -211,6 +217,9 @@ if cfg.EnableStorage {
 			}
 			node, err := ValidateNode(rawNode)
 			if err != nil {
+				return ErrorResult(err.Error())
+			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
@@ -305,6 +314,9 @@ if cfg.EnableConfig {
 			}
 			node, err := ValidateNode(rawNode)
 			if err != nil {
+				return ErrorResult(err.Error())
+			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
@@ -430,6 +442,9 @@ if cfg.EnableStorage {
 			if err != nil {
 				return ErrorResult(err.Error())
 			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
+				return ErrorResult(err.Error())
+			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -550,6 +565,9 @@ if cfg.EnableStorage {
 			}
 			node, err := ValidateNode(rawNode)
 			if err != nil {
+				return ErrorResult(err.Error())
+			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
@@ -684,6 +702,9 @@ if cfg.EnableDestroy {
 			if err != nil {
 				return ErrorResult(err.Error())
 			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
+				return ErrorResult(err.Error())
+			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
 			if err != nil {
 				return ErrorResult(err.Error())
@@ -779,6 +800,9 @@ if cfg.EnableDestroy {
 			}
 			node, err := ValidateNode(rawNode)
 			if err != nil {
+				return ErrorResult(err.Error())
+			}
+			if err := ValidateAllowedNode(node, cfg.AllowedNodes); err != nil {
 				return ErrorResult(err.Error())
 			}
 			rawVMID, err := ParseRequiredInt(req.Params.Arguments, "vmid")
