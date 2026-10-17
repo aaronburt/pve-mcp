@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pve-mcp</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<section id="login" hidden>
+  <form id="login-form">
+    <h1>pve-mcp</h1>
+    <label for="token">UI token</label>
+    <input id="token" type="password" autocomplete="off" required>
+    <button type="submit">Sign in</button>
+    <p id="login-error" role="alert"></p>
+  </form>
+</section>
+
+<main id="app" hidden>
+  <header id="bar">
+    <strong>pve-mcp</strong>
+    <span id="pve" class="badge">PVE …</span>
+    <span id="transport" class="badge"></span>
+    <span id="tools" class="badge"></span>
+    <span id="heap" class="badge"></span>
+    <span id="uptime" class="badge"></span>
+    <label class="spacer" for="level">Log level</label>
+    <select id="level">
+      <option>debug</option><option>info</option><option>warn</option><option>error</option>
+    </select>
+    <button id="logout" type="button">Sign out</button>
+  </header>
+
+  <section id="controls">
+    <div id="filters" role="group" aria-label="Filters">
+      <button data-filter="all" class="on">All</button>
+      <button data-filter="mutations">Mutations</button>
+      <button data-filter="dryruns">Dry-runs</button>
+      <button data-filter="reads">Reads</button>
+      <button data-filter="errors">Errors</button>
+      <button data-filter="logs">Server logs</button>
+    </div>
+    <input id="search" type="search" placeholder="Search" aria-label="Search">
+    <button id="pause" type="button">Pause</button>
+    <button id="clear" type="button">Clear</button>
+    <span id="conn" class="badge"></span>
+  </section>
+
+  <table id="events">
+    <thead><tr><th>Time</th><th>Kind</th><th>Event</th><th>ms</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p id="empty">No events yet.</p>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
