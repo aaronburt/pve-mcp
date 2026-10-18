@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
 )
 
 func AuthMiddleware(cfg *config.Config, next http.Handler) http.Handler {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aaronburt/pve-mcp/internal/prompts"
+	"github.com/aaronburt/pve-mcp-go/internal/prompts"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

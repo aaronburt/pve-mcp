@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pve-mcp:latest
+    image: ghcr.io/aaronburt/pve-mcp-go:latest
     container_name: pve-mcp
     restart: unless-stopped
     ports:

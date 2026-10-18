@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/aaronburt/pve-mcp/internal/pve"
-	"github.com/aaronburt/pve-mcp/internal/tools"
+	"github.com/aaronburt/pve-mcp-go/internal/pve"
+	"github.com/aaronburt/pve-mcp-go/internal/tools"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/yosida95/uritemplate/v3"

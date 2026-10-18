@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
-	"github.com/aaronburt/pve-mcp/internal/pve"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/pve"
 )
 
 func getLiveClient(t *testing.T) *pve.Client {

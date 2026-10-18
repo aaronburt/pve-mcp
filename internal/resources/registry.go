@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aaronburt/pve-mcp/internal/pve"
+	"github.com/aaronburt/pve-mcp-go/internal/pve"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

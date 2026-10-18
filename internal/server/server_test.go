@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
-	"github.com/aaronburt/pve-mcp/internal/pve"
-	"github.com/aaronburt/pve-mcp/internal/server"
-	"github.com/aaronburt/pve-mcp/internal/webui"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/pve"
+	"github.com/aaronburt/pve-mcp-go/internal/server"
+	"github.com/aaronburt/pve-mcp-go/internal/webui"
 )
 
 func TestAuthMiddleware(t *testing.T) {
