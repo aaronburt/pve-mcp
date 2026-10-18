@@ -3,7 +3,6 @@ services:
     image: ghcr.io/aaronburt/pve-mcp-go:latest
     container_name: pve-mcp
     restart: unless-stopped
-    # The app writes nothing to disk and needs no Linux capabilities.
     read_only: true
     cap_drop:
       - ALL
@@ -24,6 +23,5 @@ services:
     environment:
       - MCP_BIND_ADDRESS=0.0.0.0
       - PORT=8080
-      # Web UI is off unless MCP_UI_ENABLED=true is set in .env (with MCP_UI_TOKEN).
       - MCP_UI_BIND_ADDRESS=0.0.0.0
       - MCP_UI_ALLOW_INSECURE_BIND=true

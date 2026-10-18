@@ -1,7 +1,3 @@
-# Build stage
-# Compile on the build host and cross-compile for the target, so arm64 images
-# don't run the Go toolchain under emulation. The Debian-based image ships
-# tzdata and CA certificates, which the runtime stage copies from here.
 FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS builder
 
 ARG TARGETOS
@@ -16,7 +12,6 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /pve-mcp ./cmd/pve-mcp
 
-# Final runtime stage
 FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /
