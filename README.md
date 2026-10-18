@@ -150,10 +150,9 @@ export MCP_UI_TOKEN="$(openssl rand -hex 32)"
 
 ### 2. Docker & Docker Compose
 
-Run with Docker:
+Pull the published image and run it. Images are built for linux/amd64 and linux/arm64.
 ```bash
-# Build the minimal distroless image (~15MB)
-docker build -t ghcr.io/aaronburt/pve-mcp-go:latest .
+docker pull ghcr.io/aaronburt/pve-mcp-go:latest
 
 # Run the container
 docker run -d \
@@ -165,10 +164,20 @@ docker run -d \
   ghcr.io/aaronburt/pve-mcp-go:latest
 ```
 
-Or using Docker Compose:
+Or using Docker Compose, which pulls the same image:
 ```bash
+docker compose pull
 docker compose up -d
 ```
+
+To update later, run the same two commands. The package must be public for an anonymous pull. If it isn't, run `docker login ghcr.io` with a token that has `read:packages` first.
+
+To build from source instead, add the build override file. Compose builds the image and tags it with the same name:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+With plain Docker, `docker build -t ghcr.io/aaronburt/pve-mcp-go:latest .` builds the same tag locally, and the `docker run` command above uses it.
 
 Compose publishes the MCP port on all interfaces and the Web UI port on loopback only. To enable the Web UI, add `MCP_UI_ENABLED=true` and `MCP_UI_TOKEN` to `.env`, run `docker compose up -d`, then open http://127.0.0.1:8081.
 
