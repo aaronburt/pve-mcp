@@ -3,6 +3,19 @@ services:
     image: ghcr.io/aaronburt/pve-mcp-go:latest
     container_name: pve-mcp
     restart: unless-stopped
+    # The app writes nothing to disk and needs no Linux capabilities.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "8080:8080"
       - "127.0.0.1:8081:8081"

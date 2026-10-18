@@ -158,6 +158,13 @@ docker pull ghcr.io/aaronburt/pve-mcp-go:latest
 docker run -d \
   --name pve-mcp \
   --restart unless-stopped \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --pids-limit 100 \
+  --memory 256m \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -p 127.0.0.1:8080:8080 \
   --env-file .env \
   -e MCP_BIND_ADDRESS="0.0.0.0" \
