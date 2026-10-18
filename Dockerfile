@@ -1,5 +1,10 @@
 # Build stage
-FROM golang:alpine AS builder
+# Compile on the build host and cross-compile for the target, so arm64 images
+# don't run the Go toolchain under emulation.
+FROM --platform=$BUILDPLATFORM golang:alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -10,7 +15,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /pve-mcp ./cmd/pve-mcp
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /pve-mcp ./cmd/pve-mcp
 
 # Final runtime stage
 FROM gcr.io/distroless/static-debian12:nonroot
