@@ -1,8 +1,5 @@
 services:
   pve-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: ghcr.io/aaronburt/pve-mcp-go:latest
     container_name: pve-mcp
     restart: unless-stopped
