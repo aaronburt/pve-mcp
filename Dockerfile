@@ -1,14 +1,13 @@
 # Build stage
 # Compile on the build host and cross-compile for the target, so arm64 images
-# don't run the Go toolchain under emulation.
-FROM --platform=$BUILDPLATFORM golang:alpine AS builder
+# don't run the Go toolchain under emulation. The Debian-based image ships
+# tzdata and CA certificates, which the runtime stage copies from here.
+FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /app
-
-RUN apk add --no-cache ca-certificates tzdata
 
 COPY go.mod go.sum ./
 RUN go mod download
