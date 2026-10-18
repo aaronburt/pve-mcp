@@ -10,7 +10,7 @@
 <section id="login" hidden>
   <form id="login-form">
     <h1>pve-mcp</h1>
-    <label for="token">UI token</label>
+    <label for="token" class="label">UI token</label>
     <input id="token" type="password" autocomplete="off" required>
     <button type="submit">Sign in</button>
     <p id="login-error" role="alert"></p>
@@ -19,39 +19,79 @@
 
 <main id="app" hidden>
   <header id="bar">
-    <strong>pve-mcp</strong>
-    <span id="pve" class="badge">PVE …</span>
-    <span id="transport" class="badge"></span>
-    <span id="tools" class="badge"></span>
-    <span id="heap" class="badge"></span>
-    <span id="uptime" class="badge"></span>
-    <label class="spacer" for="level">Log level</label>
-    <select id="level">
-      <option>debug</option><option>info</option><option>warn</option><option>error</option>
-    </select>
-    <button id="logout" type="button">Sign out</button>
+    <div class="brand">
+      <span class="mark" aria-hidden="true">P</span>
+      <strong>pve-mcp</strong>
+    </div>
+    <div class="bar-end">
+      <label class="label" for="level">Log level</label>
+      <select id="level">
+        <option>debug</option><option>info</option><option>warn</option><option>error</option>
+      </select>
+      <button id="logout" type="button">Sign out</button>
+    </div>
   </header>
 
-  <section id="controls">
-    <div id="filters" role="group" aria-label="Filters">
-      <button data-filter="all" class="on">All</button>
-      <button data-filter="mutations">Mutations</button>
-      <button data-filter="dryruns">Dry-runs</button>
-      <button data-filter="reads">Reads</button>
-      <button data-filter="errors">Errors</button>
-      <button data-filter="logs">Server logs</button>
+  <section id="stats" class="stats">
+    <div class="stat">
+      <div class="label">Mutations</div>
+      <div id="n-mut" class="num k-mut">0</div>
+      <div class="sub">In the event buffer</div>
     </div>
-    <input id="search" type="search" placeholder="Search" aria-label="Search">
-    <button id="pause" type="button">Pause</button>
-    <button id="clear" type="button">Clear</button>
-    <span id="conn" class="badge"></span>
+    <div class="stat">
+      <div class="label">Dry-runs</div>
+      <div id="n-dry" class="num k-dry">0</div>
+      <div class="sub">Nothing applied</div>
+    </div>
+    <div class="stat">
+      <div class="label">Errors</div>
+      <div id="n-err" class="num k-err">0</div>
+      <div class="sub">In the event buffer</div>
+    </div>
+    <div class="stat">
+      <div class="label">Proxmox</div>
+      <div id="pve" class="num">…</div>
+      <div id="pve-sub" class="sub"></div>
+    </div>
   </section>
 
-  <table id="events">
-    <thead><tr><th>Time</th><th>Kind</th><th>Event</th><th>ms</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
+  <section id="controls">
+    <div id="filters" class="segs" role="group" aria-label="Filter events">
+      <button data-filter="all" class="on" type="button">All</button>
+      <button data-filter="mutations" type="button">Mutations</button>
+      <button data-filter="dryruns" type="button">Dry-runs</button>
+      <button data-filter="reads" type="button">Reads</button>
+      <button data-filter="errors" type="button">Errors</button>
+      <button data-filter="logs" type="button">Server logs</button>
+    </div>
+    <div class="joined controls-end" role="group" aria-label="Event tools">
+      <div id="search-wrap" hidden>
+        <input id="search" type="search" placeholder="Search events" aria-label="Search events">
+      </div>
+      <button id="search-toggle" type="button" aria-label="Search events" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg>
+      </button>
+      <button id="pause" type="button">Pause</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
+  </section>
+
+  <div class="evhead label">
+    <span>Time</span>
+    <span>Kind</span>
+    <span>Event</span>
+  </div>
+  <div id="rows"></div>
   <p id="empty">No events yet.</p>
+
+  <footer id="meta">
+    <span id="conn"></span>
+    <span id="transport"></span>
+    <span id="tools"></span>
+    <span id="heap"></span>
+    <span id="uptime"></span>
+    <span id="buf"></span>
+  </footer>
 </main>
 <script src="/app.js"></script>
 </body>
