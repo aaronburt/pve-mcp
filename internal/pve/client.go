@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
 )
 
 const maxPayloadBytes = 10 * 1024 * 1024

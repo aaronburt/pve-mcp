@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
 )
 
 func TestLoadFromEnv_MissingRequired(t *testing.T) {

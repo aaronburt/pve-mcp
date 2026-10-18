@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronburt/pve-mcp/internal/config"
-	"github.com/aaronburt/pve-mcp/internal/pve"
+	"github.com/aaronburt/pve-mcp-go/internal/config"
+	"github.com/aaronburt/pve-mcp-go/internal/pve"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )

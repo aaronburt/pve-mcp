@@ -1,4 +1,4 @@
-module github.com/aaronburt/pve-mcp
+module github.com/aaronburt/pve-mcp-go
 
 go 1.26.3
 

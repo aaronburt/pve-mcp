@@ -1,4 +1,4 @@
-# pve-mcp
+# pve-mcp-go
 
 [![Go Version](https://img.shields.io/badge/go-1.26%2B-blue.svg)](https://golang.org)
 [![MCP Protocol](https://img.shields.io/badge/MCP-Resources%20%7C%20Tools%20%7C%20Prompts-blueviolet.svg)](#mcp-protocol-architecture)
@@ -149,7 +149,7 @@ export MCP_AUTH_TOKEN="your-secure-bearer-token"
 Run with Docker:
 ```bash
 # Build the minimal distroless image (~15MB)
-docker build -t pve-mcp:latest .
+docker build -t ghcr.io/aaronburt/pve-mcp-go:latest .
 
 # Run the container
 docker run -d \
@@ -158,7 +158,7 @@ docker run -d \
   -p 127.0.0.1:8080:8080 \
   --env-file .env \
   -e MCP_BIND_ADDRESS="0.0.0.0" \
-  pve-mcp:latest
+  ghcr.io/aaronburt/pve-mcp-go:latest
 ```
 
 Or using Docker Compose:
