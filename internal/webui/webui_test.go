@@ -176,8 +176,6 @@ func TestLogTee(t *testing.T) {
 	}
 }
 
-// ---- HTTP ------------------------------------------------------------------
-
 func newTestServer(t *testing.T, mutate func(*Options)) (*Server, *Buffer) {
 	t.Helper()
 	buf := NewBuffer()

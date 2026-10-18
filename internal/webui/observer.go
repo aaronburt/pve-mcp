@@ -12,8 +12,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
-// Observer feeds MCP activity and server logs into a Buffer. It is only
-// created when the UI is enabled at boot, so a disabled UI installs nothing.
 type Observer struct {
 	buf      *Buffer
 	sanitize func(string) string
@@ -27,7 +25,6 @@ func NewObserver(buf *Buffer, sanitize func(string) string) *Observer {
 	return &Observer{buf: buf, sanitize: sanitize}
 }
 
-// SetServer lets the observer look up tool annotations to classify calls.
 func (o *Observer) SetServer(s *mcpserver.MCPServer) { o.srv.Store(s) }
 
 func (o *Observer) add(e Entry) {
@@ -72,7 +69,6 @@ func resultText(r *mcp.CallToolResult) string {
 	return ""
 }
 
-// Middleware records every tool call with its arguments, outcome and duration.
 func (o *Observer) Middleware() mcpserver.ToolHandlerMiddleware {
 	return func(next mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
 		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -98,7 +94,6 @@ func (o *Observer) Middleware() mcpserver.ToolHandlerMiddleware {
 	}
 }
 
-// Hooks records resource reads, prompt fetches and protocol errors.
 func (o *Observer) Hooks() *mcpserver.Hooks {
 	h := &mcpserver.Hooks{}
 	h.AddAfterReadResource(func(ctx context.Context, id any, req *mcp.ReadResourceRequest, res *mcp.ReadResourceResult) {
@@ -117,7 +112,6 @@ func (o *Observer) Hooks() *mcpserver.Hooks {
 	return h
 }
 
-// LogHandler tees records into the buffer while forwarding them to next.
 func (o *Observer) LogHandler(next slog.Handler) slog.Handler {
 	return &teeHandler{next: next, obs: o}
 }

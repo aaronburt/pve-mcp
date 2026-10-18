@@ -32,27 +32,22 @@ const (
 	failedLoginDelay = 750 * time.Millisecond
 )
 
-// Options configures the Web UI server.
 type Options struct {
 	BindAddress       string
 	Port              string
 	Token             string
 	AllowInsecureBind bool
 	AllowedHosts      []string
-	Transport         string // "stdio" or "http"
+	Transport         string
 	Buffer            *Buffer
 	LogLevel          interface {
 		Level() slog.Level
 		Set(slog.Level)
 	}
-	// Ping checks PVE reachability (GET /version).
-	Ping func(ctx context.Context) error
-	// ToolCount reports the number of registered tools.
+	Ping      func(ctx context.Context) error
 	ToolCount func() int
 }
 
-// Server is the opt-in control plane HTTP server. In this phase it is
-// read-only apart from clearing the in-memory log and changing the log level.
 type Server struct {
 	opts    Options
 	http    *http.Server
@@ -70,7 +65,6 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// New validates the options and builds the server. It does not listen.
 func New(opts Options) (*Server, error) {
 	if opts.Token == "" {
 		return nil, errors.New("MCP_UI_TOKEN is required to start the web UI")
@@ -111,16 +105,12 @@ func New(opts Options) (*Server, error) {
 func (s *Server) Addr() string          { return s.http.Addr }
 func (s *Server) Handler() http.Handler { return s.http.Handler }
 
-// ListenAndServe blocks until the server is shut down.
 func (s *Server) ListenAndServe() error { return s.http.ListenAndServe() }
 
-// Shutdown closes live streams, stops the listener and frees the log buffer.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.opts.Buffer.Close()
 	return s.http.Shutdown(ctx)
 }
-
-// ---- request guards --------------------------------------------------------
 
 func (s *Server) hostAllowed(host string) bool {
 	host = strings.ToLower(host)
@@ -146,8 +136,6 @@ func (s *Server) hostAllowed(host string) bool {
 	return true
 }
 
-// guard enforces the Host allow-list (DNS rebinding), same-origin Origin
-// checks and a custom header on every state-changing request.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -220,8 +208,6 @@ func (s *Server) authed(next http.HandlerFunc) http.HandlerFunc {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 	}
 }
-
-// ---- handlers --------------------------------------------------------------
 
 func (s *Server) static(name, contentType string) http.HandlerFunc {
 	data, err := fs.ReadFile(staticFS, "static/"+name)

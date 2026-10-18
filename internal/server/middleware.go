@@ -89,8 +89,6 @@ func RequestLoggerMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// redactedURL renders u with the value of any token query parameter removed so
-// the auth token never reaches logs.
 func redactedURL(u *url.URL) string {
 	q := u.Query()
 	if !q.Has("token") {

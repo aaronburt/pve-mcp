@@ -62,15 +62,12 @@ type Server struct {
 	mcpServer        *mcpserver.MCPServer
 }
 
-// Option customizes server construction.
 type Option func(*options)
 
 type options struct {
 	observer *webui.Observer
 }
 
-// WithObserver installs the Web UI observer. Without it (the default) no
-// middleware or hooks are attached.
 func WithObserver(obs *webui.Observer) Option {
 	return func(o *options) { o.observer = obs }
 }
@@ -156,7 +153,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// MCPServer returns the underlying MCP server.
 func (s *Server) MCPServer() *mcpserver.MCPServer {
 	return s.mcpServer
 }

@@ -6,15 +6,12 @@ import (
 )
 
 const (
-	// BufferCapacity is the number of entries kept in memory.
-	BufferCapacity = 250
-	// MaxDetailBytes caps the detail payload of a single entry.
+	BufferCapacity  = 250
 	MaxDetailBytes  = 2048
 	maxMessageBytes = 512
 	subscriberQueue = 64
 )
 
-// Entry kinds.
 const (
 	KindToolRead     = "TOOL_READ"
 	KindToolDryRun   = "TOOL_DRY_RUN"
@@ -25,7 +22,6 @@ const (
 	KindServerLog    = "SERVER_LOG"
 )
 
-// Entry is a single event shown in the live stream.
 type Entry struct {
 	ID       uint64    `json:"id"`
 	Time     time.Time `json:"time"`
@@ -36,7 +32,6 @@ type Entry struct {
 	Duration int64     `json:"duration_ms,omitempty"`
 }
 
-// Buffer is a bounded ring of entries with a fan-out to live subscribers.
 type Buffer struct {
 	mu     sync.Mutex
 	ring   []Entry
@@ -65,8 +60,6 @@ func truncate(s string, max int) string {
 	return s[:cut] + "…[truncated]"
 }
 
-// Add stores e (assigning its ID and time) and delivers it to subscribers.
-// A subscriber whose queue is full is dropped rather than blocking the caller.
 func (b *Buffer) Add(e Entry) {
 	e.Message = truncate(e.Message, maxMessageBytes)
 	e.Detail = truncate(e.Detail, MaxDetailBytes)
@@ -98,7 +91,6 @@ func (b *Buffer) Add(e Entry) {
 	}
 }
 
-// Snapshot returns the current entries, oldest first.
 func (b *Buffer) Snapshot() []Entry {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -113,9 +105,6 @@ func (b *Buffer) snapshotLocked() []Entry {
 	return out
 }
 
-// Subscribe returns the current history and a channel of later entries. The
-// channel is closed when the buffer is closed or the subscriber falls behind.
-// Call cancel when done.
 func (b *Buffer) Subscribe() (history []Entry, live <-chan Entry, cancel func()) {
 	ch := make(chan Entry, subscriberQueue)
 	b.mu.Lock()
@@ -138,7 +127,6 @@ func (b *Buffer) Subscribe() (history []Entry, live <-chan Entry, cancel func())
 	return history, ch, cancel
 }
 
-// Clear empties the ring. Subscribers stay connected.
 func (b *Buffer) Clear() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -148,7 +136,6 @@ func (b *Buffer) Clear() {
 	b.start, b.count = 0, 0
 }
 
-// Close drops all entries and closes every subscriber channel.
 func (b *Buffer) Close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
